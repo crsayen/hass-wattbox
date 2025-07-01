@@ -1,57 +1,130 @@
 """Binary sensor platform for wattbox."""
 
 import logging
+from typing import Optional
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.const import CONF_NAME, CONF_RESOURCES
+from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import BINARY_SENSOR_TYPES, DOMAIN_DATA
-from .entity import WattBoxEntity
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_platform(  # pylint: disable=unused-argument
+async def async_setup_entry(
     hass: HomeAssistant,
-    config: ConfigType,
+    entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
-    discovery_info: DiscoveryInfoType,
 ) -> None:
-    """Setup binary_sensor platform."""
-    name = discovery_info[CONF_NAME]
+    """Set up WattBox binary sensor platform."""
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    
     entities = []
+    
+    # Auto reboot status
+    entities.append(WattBoxAutoRebootSensor(coordinator))
+    
+    # UPS connected status
+    entities.append(WattBoxUPSConnectedSensor(coordinator))
+    
+    # UPS on battery status (if UPS is connected)
+    if coordinator.data and coordinator.data.get("ups_connected"):
+        entities.append(WattBoxUPSOnBatterySensor(coordinator))
+    
+    # Individual outlet status sensors
+    if coordinator.data and coordinator.data.get("outlets"):
+        for outlet in coordinator.data["outlets"]:
+            entities.append(WattBoxOutletStatusSensor(coordinator, outlet.index, outlet.name))
+    
+    async_add_entities(entities)
 
-    for resource in discovery_info[CONF_RESOURCES]:
-        sensor_type = resource.lower()
 
-        if sensor_type not in BINARY_SENSOR_TYPES:
-            continue
+class WattBoxBaseBinarySensor(CoordinatorEntity, BinarySensorEntity):
+    """Base class for WattBox binary sensors."""
 
-        entities.append(WattBoxBinarySensor(hass, name, sensor_type))
+    def __init__(self, coordinator, sensor_type: str, name: str, device_class: Optional[BinarySensorDeviceClass] = None):
+        """Initialize the binary sensor."""
+        super().__init__(coordinator)
+        self._sensor_type = sensor_type
+        self._attr_name = f"WattBox {name}"
+        self._attr_unique_id = f"{coordinator.client.host}_{sensor_type}"
+        if device_class:
+            self._attr_device_class = device_class
 
-    async_add_entities(entities, True)
+    @property
+    def device_info(self):
+        """Return device information."""
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.client.host)},
+            "name": "WattBox",
+            "manufacturer": "SnapAV",
+            "model": self.coordinator.data.get("system_info", {}).get("model", "Unknown"),
+            "sw_version": self.coordinator.data.get("system_info", {}).get("firmware", "Unknown"),
+        }
 
 
-class WattBoxBinarySensor(WattBoxEntity, BinarySensorEntity):
-    """WattBox binary_sensor class."""
+class WattBoxAutoRebootSensor(WattBoxBaseBinarySensor):
+    """Auto reboot status sensor."""
 
-    def __init__(self, hass: HomeAssistant, name: str, sensor_type: str) -> None:
-        super().__init__(hass, name, sensor_type)
-        self.type: str = sensor_type
-        self.flipped: bool = BINARY_SENSOR_TYPES[self.type]["flipped"]
-        self._attr_name = name + " " + BINARY_SENSOR_TYPES[sensor_type]["name"]
-        self._attr_device_class = BINARY_SENSOR_TYPES[self.type]["device_class"]
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "auto_reboot", "Auto Reboot Enabled")
 
-    async def async_update(self) -> None:
-        """Update the sensor."""
-        # Get domain data
-        wattbox = self.hass.data[DOMAIN_DATA][self.wattbox_name]
+    @property
+    def is_on(self) -> Optional[bool]:
+        """Return true if auto reboot is enabled."""
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get("auto_reboot_enabled", False)
 
-        # Check the data and update the value.
-        value: bool | None = getattr(wattbox, self.type)
-        if value is not None and self.flipped:
-            value = not value
-        self._attr_is_on = value
+
+class WattBoxUPSConnectedSensor(WattBoxBaseBinarySensor):
+    """UPS connected status sensor."""
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "ups_connected", "UPS Connected", BinarySensorDeviceClass.CONNECTIVITY)
+
+    @property
+    def is_on(self) -> Optional[bool]:
+        """Return true if UPS is connected."""
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get("ups_connected", False)
+
+
+class WattBoxUPSOnBatterySensor(WattBoxBaseBinarySensor):
+    """UPS on battery status sensor."""
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "ups_on_battery", "UPS On Battery", BinarySensorDeviceClass.BATTERY)
+
+    @property
+    def is_on(self) -> Optional[bool]:
+        """Return true if UPS is on battery."""
+        if not self.coordinator.data or not self.coordinator.data.get("ups_status"):
+            return None
+        ups_status = self.coordinator.data["ups_status"]
+        return getattr(ups_status, "on_battery", False)
+
+
+class WattBoxOutletStatusSensor(WattBoxBaseBinarySensor):
+    """Outlet status binary sensor."""
+
+    def __init__(self, coordinator, outlet_index: int, outlet_name: str):
+        """Initialize the outlet status sensor."""
+        self._outlet_index = outlet_index
+        self._outlet_name = outlet_name
+        super().__init__(coordinator, f"outlet_{outlet_index}_status", f"{outlet_name} Status", BinarySensorDeviceClass.POWER)
+
+    @property
+    def is_on(self) -> Optional[bool]:
+        """Return true if outlet is on."""
+        if not self.coordinator.data or not self.coordinator.data.get("outlets"):
+            return None
+            
+        for outlet in self.coordinator.data["outlets"]:
+            if outlet.index == self._outlet_index:
+                return outlet.status
+        return None
