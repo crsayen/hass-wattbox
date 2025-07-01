@@ -1,14 +1,14 @@
 {
     "domain": "wattbox",
     "name": "WattBox",
-    "version": "1.0.0",
-    "issue_tracker": "https://github.com/bballdavis/hass-wattbox/issues",
-    "documentation": "https://github.com/bballdavis/hass-wattbox",
-    "dependencies": [],
-    "config_flow": true,
-    "iot_class": "local_polling",
     "codeowners": [
         "@eseglem"
     ],
-    "requirements": []
+    "config_flow": true,
+    "dependencies": [],
+    "documentation": "https://github.com/bballdavis/hass-wattbox",
+    "iot_class": "local_polling",
+    "issue_tracker": "https://github.com/bballdavis/hass-wattbox/issues",
+    "requirements": [],
+    "version": "1.0.0"
 }
