@@ -141,17 +141,18 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle reconfiguration of an existing entry."""
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        errors: dict[str, str] = {}
         
         if user_input is not None:
             try:
                 info = await validate_input(self.hass, user_input)
             except CannotConnect:
-                errors = {"base": "cannot_connect"}
+                errors["base"] = "cannot_connect"
             except InvalidAuth:
-                errors = {"base": "invalid_auth"}
+                errors["base"] = "invalid_auth"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
-                errors = {"base": "unknown"}
+                errors["base"] = "unknown"
             else:
                 # Update the config entry
                 return self.async_update_reload_and_abort(
@@ -160,13 +161,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         else:
             # Pre-fill with existing data
             user_input = entry.data
-            errors = {}
 
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_HOST, default=user_input.get(CONF_HOST)): cv.string,
+                    vol.Required(CONF_HOST, default=user_input.get(CONF_HOST, "")): cv.string,
                     vol.Optional(CONF_PORT, default=user_input.get(CONF_PORT, DEFAULT_PORT)): cv.port,
                     vol.Optional(CONF_USERNAME, default=user_input.get(CONF_USERNAME, DEFAULT_USER)): cv.string,
                     vol.Optional(CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
