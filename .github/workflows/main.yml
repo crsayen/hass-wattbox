@@ -1,0 +1,271 @@
+name: Check PyWattBox API Library Version
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+  pull_request:
+    paths:
+      - 'custom_components/wattbox/pywattbox_api_v2_4/**'
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - 'custom_components/wattbox/pywattbox_api_v2_4/**'
+
+jobs:
+  check-library-version:
+    runs-on: ubuntu-latest
+    name: Check PyWattBox API Library Version
+    
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+        with:
+          path: hass-wattbox
+          
+      - name: Checkout PyWattBox library repository
+        uses: actions/checkout@v4
+        with:
+          repository: bballdavis/pywattbox_800
+          path: pywattbox_800
+          
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+          
+      - name: Compare library versions
+        id: compare
+        run: |
+          echo "Comparing library versions..."
+          
+          # Function to get version from __init__.py
+          get_version() {
+            local file="$1"
+            if [ -f "$file" ]; then
+              grep -E '^__version__\s*=' "$file" | sed 's/.*=\s*["\x27]\([^"\x27]*\)["\x27].*/\1/' || echo "unknown"
+            else
+              echo "missing"
+            fi
+          }
+          
+          # Get versions
+          CURRENT_VERSION=$(get_version "hass-wattbox/custom_components/wattbox/pywattbox_api_v2_4/__init__.py")
+          LATEST_VERSION=$(get_version "pywattbox_800/pywattbox_api_v2_4/__init__.py")
+          
+          echo "Current version in hass-wattbox: $CURRENT_VERSION"
+          echo "Latest version in pywattbox_800: $LATEST_VERSION"
+          
+          # Set outputs
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          
+          # Compare versions
+          if [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+            echo "versions_match=false" >> $GITHUB_OUTPUT
+            echo "❌ Version mismatch detected!"
+            echo "  Current: $CURRENT_VERSION"
+            echo "  Latest:  $LATEST_VERSION"
+          else
+            echo "versions_match=true" >> $GITHUB_OUTPUT
+            echo "✅ Versions match!"
+          fi
+          
+      - name: Compare file contents
+        id: compare-files
+        run: |
+          echo "Comparing file contents..."
+          
+          # Define the files to compare
+          FILES=(
+            "__init__.py"
+            "client.py"
+            "models.py"
+            "exceptions.py"
+            "endpoints.py"
+            "utils.py"
+          )
+          
+          CHANGES_DETECTED=false
+          CHANGED_FILES=""
+          
+          for file in "${FILES[@]}"; do
+            CURRENT_FILE="hass-wattbox/custom_components/wattbox/pywattbox_api_v2_4/$file"
+            LATEST_FILE="pywattbox_800/pywattbox_api_v2_4/$file"
+            
+            echo "Checking $file..."
+            
+            if [ ! -f "$CURRENT_FILE" ]; then
+              echo "❌ $file is missing in current repository"
+              CHANGES_DETECTED=true
+              CHANGED_FILES="$CHANGED_FILES\n- $file (missing)"
+              continue
+            fi
+            
+            if [ ! -f "$LATEST_FILE" ]; then
+              echo "⚠️ $file is missing in latest repository"
+              continue
+            fi
+            
+            # Compare file contents (ignoring whitespace differences)
+            if ! diff -w "$CURRENT_FILE" "$LATEST_FILE" > /dev/null 2>&1; then
+              echo "❌ $file has differences"
+              CHANGES_DETECTED=true
+              CHANGED_FILES="$CHANGED_FILES\n- $file (content differs)"
+              
+              # Show the differences
+              echo "Differences in $file:"
+              diff -u "$CURRENT_FILE" "$LATEST_FILE" | head -20
+              echo "..."
+            else
+              echo "✅ $file matches"
+            fi
+          done
+          
+          echo "changes_detected=$CHANGES_DETECTED" >> $GITHUB_OUTPUT
+          echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$CHANGED_FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+      - name: Create issue if outdated
+        if: steps.compare.outputs.versions_match == 'false' || steps.compare-files.outputs.changes_detected == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const currentVersion = '${{ steps.compare.outputs.current_version }}';
+            const latestVersion = '${{ steps.compare.outputs.latest_version }}';
+            const changedFiles = `${{ steps.compare-files.outputs.changed_files }}`;
+            const versionsMatch = '${{ steps.compare.outputs.versions_match }}' === 'true';
+            const changesDetected = '${{ steps.compare-files.outputs.changes_detected }}' === 'true';
+            
+            // Check if there's already an open issue
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: ['pywattbox-update']
+            });
+            
+            const existingIssue = issues.data.find(issue => 
+              issue.title.includes('PyWattBox API Library Update Available')
+            );
+            
+            let body = `## 🔄 PyWattBox API Library Update Available\n\n`;
+            
+            if (!versionsMatch) {
+              body += `### Version Mismatch\n`;
+              body += `- **Current version**: \`${currentVersion}\`\n`;
+              body += `- **Latest version**: \`${latestVersion}\`\n\n`;
+            }
+            
+            if (changesDetected) {
+              body += `### File Changes Detected\n`;
+              body += `The following files have differences:\n${changedFiles}\n\n`;
+            }
+            
+            body += `### Action Required\n`;
+            body += `Please update the PyWattBox API library in the \`custom_components/wattbox/pywattbox_api_v2_4/\` folder with the latest version from [pywattbox_800](https://github.com/bballdavis/pywattbox_800).\n\n`;
+            body += `### How to Update\n`;
+            body += `1. Download the latest files from the [pywattbox_800 repository](https://github.com/bballdavis/pywattbox_800/tree/main/pywattbox_api_v2_4)\n`;
+            body += `2. Replace the files in \`custom_components/wattbox/pywattbox_api_v2_4/\`\n`;
+            body += `3. Test the integration to ensure compatibility\n`;
+            body += `4. Update the version number if needed\n\n`;
+            body += `---\n`;
+            body += `*This issue was automatically created by the PyWattBox API version check workflow.*`;
+            
+            if (existingIssue) {
+              // Update existing issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: body
+              });
+              
+              // Add a comment about the update
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: `🔄 **Update**: Library version check ran again on ${new Date().toISOString().split('T')[0]}`
+              });
+              
+              console.log(`Updated existing issue #${existingIssue.number}`);
+            } else {
+              // Create new issue
+              const issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `PyWattBox API Library Update Available (v${latestVersion})`,
+                body: body,
+                labels: ['pywattbox-update', 'enhancement']
+              });
+              
+              console.log(`Created new issue #${issue.data.number}`);
+            }
+            
+      - name: Close issue if up to date
+        if: steps.compare.outputs.versions_match == 'true' && steps.compare-files.outputs.changes_detected == 'false'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Check if there's an open issue to close
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: ['pywattbox-update']
+            });
+            
+            const existingIssue = issues.data.find(issue => 
+              issue.title.includes('PyWattBox API Library Update Available')
+            );
+            
+            if (existingIssue) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                state: 'closed'
+              });
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: `✅ **Resolved**: PyWattBox API library is now up to date. Closing this issue automatically.`
+              });
+              
+              console.log(`Closed issue #${existingIssue.number} as library is up to date`);
+            }
+            
+      - name: Summary
+        run: |
+          echo "## Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Current Version | \`${{ steps.compare.outputs.current_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Latest Version | \`${{ steps.compare.outputs.latest_version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Versions Match | ${{ steps.compare.outputs.versions_match == 'true' && '✅ Yes' || '❌ No' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Files Match | ${{ steps.compare-files.outputs.changes_detected == 'false' && '✅ Yes' || '❌ No' }} |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.compare.outputs.versions_match }}" == "false" ] || [ "${{ steps.compare-files.outputs.changes_detected }}" == "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️ Action Required" >> $GITHUB_STEP_SUMMARY
+            echo "The PyWattBox API library needs to be updated. Check the issues tab for details." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ All Good" >> $GITHUB_STEP_SUMMARY
+            echo "PyWattBox API library is up to date!" >> $GITHUB_STEP_SUMMARY
+          fi
