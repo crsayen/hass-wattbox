@@ -43,6 +43,10 @@ class WattBoxUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from WattBox."""
         try:
+            # Ensure we're connected before attempting to fetch data
+            if not self.client.is_connected():
+                await self.hass.async_add_executor_job(self.client.connect)
+            
             # Run the blocking calls in the executor
             device_info = await self.hass.async_add_executor_job(
                 self.client.get_device_info, True  # Force refresh
@@ -59,7 +63,23 @@ class WattBoxUpdateCoordinator(DataUpdateCoordinator):
             }
             
         except WattBoxConnectionError as err:
-            raise UpdateFailed(f"Error communicating with WattBox: {err}")
+            # Try to reconnect once on connection error
+            try:
+                await self.hass.async_add_executor_job(self.client.connect)
+                device_info = await self.hass.async_add_executor_job(
+                    self.client.get_device_info, True
+                )
+                return {
+                    "device_info": device_info,
+                    "outlets": device_info.outlets,
+                    "system_info": device_info.system_info,
+                    "power_status": device_info.power_status,
+                    "ups_status": device_info.ups_status,
+                    "ups_connected": device_info.ups_connected,
+                    "auto_reboot_enabled": device_info.auto_reboot_enabled,
+                }
+            except Exception:
+                raise UpdateFailed(f"Error communicating with WattBox: {err}")
         except WattBoxError as err:
             raise UpdateFailed(f"Error updating WattBox data: {err}")
 
@@ -84,7 +104,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await hass.async_add_executor_job(client.connect)
         await hass.async_add_executor_job(client.ping)
-        await hass.async_add_executor_job(client.disconnect)
+        # Don't disconnect - let the coordinator manage the connection
     except WattBoxError as err:
         _LOGGER.error("Failed to connect to WattBox at %s: %s", host, err)
         raise ConfigEntryNotReady from err
