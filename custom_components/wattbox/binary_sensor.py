@@ -57,12 +57,13 @@ class WattBoxBaseBinarySensor(CoordinatorEntity, BinarySensorEntity):
     @property
     def device_info(self):
         """Return device information."""
+        system_info = self.coordinator.data.get("system_info") if self.coordinator.data else None
         return {
             "identifiers": {(DOMAIN, self.coordinator.client.host)},
             "name": "WattBox",
             "manufacturer": "SnapAV",
-            "model": self.coordinator.data.get("system_info", {}).get("model", "Unknown"),
-            "sw_version": self.coordinator.data.get("system_info", {}).get("firmware", "Unknown"),
+            "model": getattr(system_info, "model", "Unknown") if system_info else "Unknown",
+            "sw_version": getattr(system_info, "firmware", "Unknown") if system_info else "Unknown",
         }
 
 
