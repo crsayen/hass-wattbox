@@ -141,36 +141,55 @@ def parse_outlet_power_response(response: str) -> OutletInfo:
     values = power_part.split(",")
     
     if len(values) != 4:
-        raise ValueError(f"Expected 4 values in power response, got {len(values)}")
+        raise ValueError(f"Expected 4 values in power response, got {len(values)}: {response}")
     
-    return OutletInfo(
-        index=int(values[0]),
-        name=f"Outlet {values[0]}",  # Default name, will be updated elsewhere
-        status=True,  # We don't know status from this response
-        power_watts=float(values[1]),
-        current_amps=float(values[2]),
-        voltage_volts=float(values[3])
-    )
+    try:
+        return OutletInfo(
+            index=int(values[0]),
+            name=f"Outlet {values[0]}",  # Default name, will be updated elsewhere
+            status=True,  # We don't know status from this response
+            power_watts=float(values[1]),
+            current_amps=float(values[2]),
+            voltage_volts=float(values[3])
+        )
+    except (ValueError, IndexError) as err:
+        raise ValueError(f"Failed to parse outlet power values {values}: {err}")
 
 
 def parse_power_status_response(response: str) -> PowerStatus:
     """Parse ?PowerStatus response."""
     # Response format: ?PowerStatus=60.00,600.00,110.00,1\n
-    if not response.startswith("?PowerStatus="):
-        raise ValueError(f"Invalid power status response: {response}")
+    # But some devices might return just the values: 60.00,600.00,110.00,1
     
-    power_part = response.replace("?PowerStatus=", "").strip()
+    response = response.strip()
+    
+    # Handle both formats - with and without the command prefix
+    if response.startswith("?PowerStatus="):
+        power_part = response.replace("?PowerStatus=", "")
+    elif "," in response and not response.startswith("?"):
+        # Looks like raw power data without prefix
+        power_part = response
+    else:
+        # Check if we got a different response (device confusion)
+        if response.startswith("?OutletName="):
+            raise ValueError(f"Device returned outlet names instead of power status. Device may not support PowerStatus command: {response}")
+        raise ValueError(f"Invalid power status response format: {response}")
+    
+    power_part = power_part.strip()
     values = power_part.split(",")
     
     if len(values) != 4:
-        raise ValueError(f"Expected 4 values in power status response, got {len(values)}")
+        raise ValueError(f"Expected 4 values in power status response, got {len(values)}: {response}")
     
-    return PowerStatus(
-        current_amps=float(values[0]),
-        power_watts=float(values[1]),
-        voltage_volts=float(values[2]),
-        safe_voltage_status=bool(int(values[3]))
-    )
+    try:
+        return PowerStatus(
+            current_amps=float(values[0]),
+            power_watts=float(values[1]),
+            voltage_volts=float(values[2]),
+            safe_voltage_status=bool(int(values[3]))
+        )
+    except (ValueError, IndexError) as err:
+        raise ValueError(f"Failed to parse power status values {values}: {err}")
 
 
 def parse_ups_status_response(response: str) -> UPSStatus:

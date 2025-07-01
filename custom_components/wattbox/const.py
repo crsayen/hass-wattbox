@@ -47,6 +47,10 @@ DEFAULT_PORT: Final[int] = 23
 DEFAULT_USER: Final[str] = "wattbox"
 DEFAULT_SCAN_INTERVAL: Final[timedelta] = timedelta(seconds=30)
 
+# Configuration options
+CONF_ENABLE_POWER_SENSORS: Final[str] = "enable_power_sensors"
+DEFAULT_ENABLE_POWER_SENSORS: Final[bool] = True
+
 TOPIC_UPDATE: Final[str] = "{}_data_update_{}"
 
 
@@ -121,3 +125,117 @@ SENSOR_TYPES: Final[Dict[str, _SensorTypeDict]] = {
         "icon": "mdi:lightning-bolt-circle",
     },
 }
+
+# Outlet-specific sensor types
+OUTLET_SENSOR_TYPES: Final[Dict[str, _SensorTypeDict]] = {
+    "power": {
+        "name": "Power",
+        "unit": UnitOfPower.WATT,
+        "icon": "mdi:lightbulb-outline",
+    },
+    "current": {
+        "name": "Current",
+        "unit": "A", 
+        "icon": "mdi:current-ac",
+    },
+    "voltage": {
+        "name": "Voltage",
+        "unit": UnitOfElectricPotential.VOLT,
+        "icon": "mdi:lightning-bolt-circle",
+    },
+}
+
+def get_outlet_device_info(host: str, outlet_index: int, outlet_name: str, wattbox_system_info=None):
+    """Get device info for an outlet device."""
+    return {
+        "identifiers": {(DOMAIN, f"{host}_outlet_{outlet_index}")},
+        "name": outlet_name,
+        "manufacturer": "SnapAV",
+        "model": f"WattBox Outlet {outlet_index}",
+        "via_device": (DOMAIN, host),
+        "sw_version": getattr(wattbox_system_info, "firmware", "Unknown") if wattbox_system_info else "Unknown",
+    }
+
+def get_wattbox_device_info(host: str, system_info=None):
+    """Get device info for the main WattBox device."""
+    return {
+        "identifiers": {(DOMAIN, host)},
+        "name": "WattBox",
+        "manufacturer": "SnapAV",
+        "model": getattr(system_info, "model", "Unknown") if system_info else "Unknown",
+        "sw_version": getattr(system_info, "firmware", "Unknown") if system_info else "Unknown",
+    }
+
+def extract_outlet_number_from_model(model: str) -> int:
+    """Extract outlet number from WattBox outlet device model string.
+    
+    Args:
+        model: Model string in format "WattBox Outlet <number>"
+        
+    Returns:
+        int: The outlet number, or 0 if not found
+    """
+    try:
+        if model and model.startswith("WattBox Outlet "):
+            # Extract the number from "WattBox Outlet <number>"
+            outlet_num_str = model.replace("WattBox Outlet ", "").strip()
+            return int(outlet_num_str)
+    except (ValueError, AttributeError):
+        pass
+    return 0
+
+def extract_outlet_number_from_device_model(device_model: str) -> int:
+    """Extract outlet number from our device model string.
+    
+    Our device models are formatted as: "WattBox Outlet <number>"
+    This function extracts the outlet number for use in API commands.
+    """
+    import re
+    
+    # Look for "WattBox Outlet <number>" pattern
+    match = re.search(r'WattBox Outlet (\d+)', device_model)
+    if match:
+        return int(match.group(1))
+    
+    # Fallback - look for any number in the string
+    numbers = re.findall(r'\d+', device_model)
+    if numbers:
+        return int(numbers[-1])  # Take the last number found
+    
+    raise ValueError(f"Could not extract outlet number from device model: {device_model}")
+
+def extract_outlet_count_from_model_name(model_name: str) -> int:
+    """Extract outlet count from WattBox model name.
+    
+    Many WattBox models include the outlet count in their model name.
+    For example: WB-800-IPVM-12 indicates 12 outlets.
+    
+    Args:
+        model_name: The model name string
+        
+    Returns:
+        int: The number of outlets, or 8 as default if not found
+    """
+    if not model_name:
+        return 8  # Default fallback
+        
+    # Look for common patterns in WattBox model names
+    # Pattern: WB-XXX-XXX-XX where the last number is outlet count
+    parts = model_name.split('-')
+    if len(parts) >= 4 and parts[0] == "WB":
+        try:
+            return int(parts[-1])
+        except ValueError:
+            pass
+    
+    # Look for other patterns with numbers at the end
+    import re
+    match = re.search(r'-(\d+)$', model_name)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+    
+    # Default fallback for unknown models
+    return 8

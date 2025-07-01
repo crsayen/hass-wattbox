@@ -1,0 +1,54 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up WattBox",
+        "description": "Configure your WattBox device connection.",
+        "data": {
+          "host": "Host IP Address",
+          "port": "Port",
+          "username": "Username",
+          "password": "Password",
+          "name": "Device Name",
+          "enable_power_sensors": "Enable Power Monitoring Sensors"
+        },
+        "data_description": {
+          "host": "IP address of your WattBox device",
+          "port": "Telnet port (usually 23)",
+          "username": "WattBox username (usually 'wattbox')",
+          "password": "WattBox password (usually 'wattbox')",
+          "name": "Friendly name for this WattBox",
+          "enable_power_sensors": "Create sensors for power, current, and voltage monitoring (system-wide and per-outlet if supported)"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure WattBox",
+        "description": "Update your WattBox device configuration.",
+        "data": {
+          "host": "Host IP Address",
+          "port": "Port",
+          "username": "Username",
+          "password": "Password",
+          "name": "Device Name",
+          "enable_power_sensors": "Enable Power Monitoring Sensors"
+        },
+        "data_description": {
+          "host": "IP address of your WattBox device",
+          "port": "Telnet port (usually 23)",
+          "username": "WattBox username (usually 'wattbox')",
+          "password": "WattBox password (usually 'wattbox')",
+          "name": "Friendly name for this WattBox",
+          "enable_power_sensors": "Create sensors for power, current, and voltage monitoring (system-wide and per-outlet if supported)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to WattBox device. Please check the host and port.",
+      "invalid_auth": "Invalid username or password.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This WattBox device is already configured."
+    }
+  }
+}

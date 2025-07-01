@@ -7,6 +7,7 @@ Main client class for communicating with SnapAV WattBox devices.
 import socket
 import time
 import logging
+import threading
 from typing import Optional, List, Dict, Any, Union
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
@@ -91,6 +92,9 @@ class WattBoxClient:
         self._connection: Optional[socket.socket] = None
         self._authenticated = False
         self._device_info: Optional[WattBoxDevice] = None
+        
+        # Thread lock to prevent simultaneous commands
+        self._command_lock = threading.RLock()
         
         # Cache for device capabilities
         self._outlet_count: Optional[int] = None
@@ -190,6 +194,55 @@ class WattBoxClient:
         except Exception as e:
             raise WattBoxAuthenticationError(f"Authentication failed: {e}")
     
+    def _cleanup_connection(self) -> None:
+        """Clean up connection resources."""
+        if self._connection:
+            try:
+                self._connection.close()
+            except Exception:
+                pass  # Ignore errors during cleanup
+            self._connection = None
+            self._authenticated = False
+
+    def _wait_for_login_prompt(self) -> bytes:
+        """Wait for login prompt from WattBox device."""
+        login_prompts = [b"login:", b"username:", b"user:"]
+        return self._wait_for_prompts(login_prompts)
+
+    def _wait_for_password_prompt(self) -> bytes:
+        """Wait for password prompt from WattBox device."""
+        password_prompts = [b"password:", b"pass:"]
+        return self._wait_for_prompts(password_prompts)
+
+    def _wait_for_prompts(self, prompts: list, timeout: Optional[float] = None) -> bytes:
+        """Wait for any of the specified prompts."""
+        if not self._connection:
+            raise WattBoxConnectionError("Not connected")
+        if timeout is None:
+            timeout = self.timeout
+        buffer = b""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                self._connection.settimeout(0.1)
+                data = self._connection.recv(1024)
+                if not data:
+                    break
+                buffer += data
+                logger.debug(f"Received data: {repr(buffer)}")
+                buffer_lower = buffer.lower()
+                for prompt in prompts:
+                    if prompt.lower() in buffer_lower:
+                        logger.debug(f"Found prompt: {prompt}")
+                        return buffer
+            except socket.timeout:
+                continue
+            except Exception as e:
+                logger.debug(f"Exception reading data: {e}")
+                break
+        logger.debug(f"Timeout waiting for prompts. Received: {repr(buffer)}")
+        raise WattBoxTimeoutError(f"Timeout waiting for prompts: {prompts}. Received: {repr(buffer)}")
+
     def _send_command(self, command: str, timeout: Optional[float] = None) -> str:
         """
         Send a command to the WattBox and return the response.
@@ -207,61 +260,109 @@ class WattBoxClient:
         timeout = timeout or self.timeout
         formatted_command = format_command(command)
         
-        try:
-            logger.debug(f"Sending command: {formatted_command.strip()}")
-            
-            # Send command
-            self._send_raw(formatted_command)
-            
-            # Read response
-            response_str = self._read_until_newline(timeout)
-            
-            logger.debug(f"Received response: {response_str}")
-            
-            # Check for error response
-            if is_error_response(response_str):
-                raise WattBoxCommandError(f"Command failed: {response_str}")
-            
-            return response_str
-            
-        except socket.timeout:
-            raise WattBoxTimeoutError(f"Command timeout: {command}")
-        except (WattBoxTimeoutError, WattBoxCommandError):
-            raise
-        except Exception as e:
-            raise WattBoxCommandError(f"Command failed: {e}")
+        # Use lock to prevent simultaneous commands that could mix responses
+        with self._command_lock:
+            try:
+                logger.debug(f"Sending command: {formatted_command.strip()}")
+                
+                # Clear any buffered data before sending new command
+                self._clear_input_buffer()
+                
+                # Send command
+                self._send_raw(formatted_command)
+                
+                # Add a longer delay to let the device process the command
+                time.sleep(0.1)
+                
+                # Read response
+                response_str = self._read_until_newline(timeout)
+                
+                logger.debug(f"Received response: {response_str}")
+                
+                # Validate response based on command type
+                is_query_command = formatted_command.strip().startswith('?')
+                is_control_command = formatted_command.strip().startswith('!')
+                
+                if is_query_command:
+                    # Query commands should return responses that start with the command prefix
+                    expected_prefix = formatted_command.strip().split('=')[0] if '=' in formatted_command else formatted_command.strip()
+                    if not response_str.startswith(expected_prefix):
+                        logger.warning(f"Response mismatch for query: sent '{expected_prefix}' but got '{response_str[:50]}...'")
+                        # Try to read additional data to find the correct response
+                        for attempt in range(3):
+                            additional_response = self._read_until_newline(1.0)  # Short timeout
+                            if additional_response.startswith(expected_prefix):
+                                response_str = additional_response
+                                logger.debug(f"Found correct response on attempt {attempt + 1}: {response_str}")
+                                break
+                            elif not additional_response:
+                                break
+                elif is_control_command:
+                    # Control commands should return success/error responses like "OK" or "ERROR"
+                    # This is the expected behavior, so no warning needed
+                    pass
+                
+                # Check for error response
+                if is_error_response(response_str):
+                    raise WattBoxCommandError(f"Command failed: {response_str}")
+                
+                return response_str
+                
+            except socket.timeout:
+                raise WattBoxTimeoutError(f"Command timeout: {command}")
+            except (WattBoxTimeoutError, WattBoxCommandError):
+                raise
+            except Exception as e:
+                raise WattBoxCommandError(f"Command failed: {e}")
     
     # Device Information Methods
     
-    def get_device_info(self, refresh: bool = False) -> WattBoxDevice:
-        """Get complete device information."""
+    def get_device_info(self, refresh: bool = False, include_outlet_power: bool = True) -> WattBoxDevice:
+        """
+        Get complete device information.
+        
+        Args:
+            refresh: Force refresh of cached data
+            include_outlet_power: Include individual outlet power data (may take longer)
+        """
         if self._device_info and not refresh:
             return self._device_info
         
+        logger.debug("Starting device info collection")
+        
         # Get system info
         system_info = self.get_system_info()
+        logger.debug("Got system info")
         
-        # Get outlet information
-        outlets = self.get_all_outlets_info()
+        # Get outlet information (including power data if requested)
+        # No artificial delay - the API handles response timing naturally
+        outlets = self.get_all_outlets_info(include_power_data=include_outlet_power)
+        logger.debug("Got outlets info")
         
         # Get power status (if supported)
-        power_status = None
-        try:
-            power_status = self.get_power_status()
-        except WattBoxCommandError:
-            pass  # Not supported on all models
+        logger.debug("Attempting to get power status")
+        power_status = self.get_power_status()  # Now returns Optional[PowerStatus]
+        logger.debug(f"Got power status: {power_status}")
         
         # Get UPS status (if applicable)
-        ups_status = None
+        logger.debug("Attempting to get UPS connection status")
         ups_connected = self.get_ups_connection_status()
+        logger.debug(f"UPS connected: {ups_connected}")
+        
+        ups_status = None
         if ups_connected:
             try:
+                logger.debug("Attempting to get UPS status")
                 ups_status = self.get_ups_status()
+                logger.debug(f"Got UPS status: {ups_status}")
             except WattBoxCommandError:
+                logger.debug("UPS status command failed")
                 pass
         
         # Get auto reboot status
+        logger.debug("Attempting to get auto reboot status")
         auto_reboot_enabled = self.get_auto_reboot_status()
+        logger.debug(f"Auto reboot enabled: {auto_reboot_enabled}")
         
         self._device_info = WattBoxDevice(
             system_info=system_info,
@@ -272,6 +373,7 @@ class WattBoxClient:
             auto_reboot_enabled=auto_reboot_enabled
         )
         
+        logger.debug("Device info collection complete")
         return self._device_info
     
     def get_system_info(self) -> SystemInfo:
@@ -287,8 +389,20 @@ class WattBoxClient:
         hostname_val = hostname.split("=")[1] if "=" in hostname else hostname
         service_tag_val = service_tag.split("=")[1] if "=" in service_tag else service_tag
         model_val = model.split("=")[1] if "=" in model else model
-        outlet_count_val = int(outlet_count_resp.split("=")[1]) if "=" in outlet_count_resp else 0
         
+        # Handle outlet count parsing with error handling
+        try:
+            if "=" in outlet_count_resp:
+                count_str = outlet_count_resp.split("=")[1].split(",")[0].strip()
+                outlet_count_val = int(count_str)
+            else:
+                outlet_count_val = 0
+        except (ValueError, IndexError) as err:
+            logger.warning(f"Failed to parse outlet count from '{outlet_count_resp}': {err}")
+            # If we can't parse outlet count, try to extract from model name
+            # WattBox model names often contain outlet count (e.g., WB-800-IPVM-12 = 12 outlets)
+            outlet_count_val = self._extract_outlet_count_from_model(outlet_count_resp, model_val)
+            
         # Cache values
         self._outlet_count = outlet_count_val
         self._model = model_val
@@ -302,6 +416,49 @@ class WattBoxClient:
             outlet_count=outlet_count_val
         )
     
+    def _extract_outlet_count_from_model(self, outlet_count_response: str, model_name: str) -> int:
+        """Extract outlet count from model name when direct parsing fails."""
+        import re
+        
+        # Try to find a number at the end of the response (common pattern)
+        # Examples: WB-800-IPVM-12 -> 12, WB-300-IPV-8 -> 8
+        for text in [outlet_count_response, model_name]:
+            if text:
+                # Look for number at the end of string
+                match = re.search(r'-(\d+)$', text)
+                if match:
+                    return int(match.group(1))
+                
+                # Look for any number in the string as fallback
+                numbers = re.findall(r'\d+', text)
+                if numbers:
+                    # Take the last number found, often the outlet count
+                    return int(numbers[-1])
+        
+        # If we can't determine outlet count, try to get it by querying actual outlets
+        return self._determine_outlet_count_by_testing()
+    
+    def _determine_outlet_count_by_testing(self) -> int:
+        """Determine outlet count by testing outlet status queries."""
+        # Start with a reasonable default and test up to find the max
+        max_test = 20  # Most WattBox units have 12 outlets or fewer
+        
+        try:
+            # Get outlet status which should contain all outlets
+            response = self._send_command(WattBoxEndpoints.OUTLET_STATUS)
+            if response:
+                # Count the number of outlet statuses returned
+                # Format is typically like "OutletStatus=1,0,1,0,1" etc.
+                if "=" in response:
+                    status_part = response.split("=")[1]
+                    outlets = status_part.split(",")
+                    return len(outlets)
+        except Exception:
+            pass
+        
+        # Fallback to a reasonable default
+        return 8  # Common outlet count for many WattBox models
+
     # Outlet Management Methods
     
     def get_outlet_count(self) -> int:
@@ -309,36 +466,89 @@ class WattBoxClient:
         if self._outlet_count is not None:
             return self._outlet_count
         
-        response = self._send_command(WattBoxEndpoints.OUTLET_COUNT)
-        count = int(response.split("=")[1]) if "=" in response else 0
-        self._outlet_count = count
-        return count
+        try:
+            response = self._send_command(WattBoxEndpoints.OUTLET_COUNT)
+            logger.debug(f"Outlet count response: {response}")
+            if "=" in response:
+                count_str = response.split("=")[1].split(",")[0].strip()
+                count = int(count_str)
+            else:
+                count = 0
+            self._outlet_count = count
+            return count
+        except (ValueError, IndexError) as err:
+            logger.warning(f"Failed to parse outlet count: {err}")
+            # Try to determine outlet count by testing
+            count = self._determine_outlet_count_by_testing()
+            self._outlet_count = count
+            return count
     
     def get_outlet_status(self) -> List[bool]:
         """Get status of all outlets."""
-        response = self._send_command(WattBoxEndpoints.OUTLET_STATUS)
-        return parse_outlet_status_response(response)
+        try:
+            response = self._send_command(WattBoxEndpoints.OUTLET_STATUS)
+            logger.debug(f"get_outlet_status command: {WattBoxEndpoints.OUTLET_STATUS}, response: {response}")
+            return parse_outlet_status_response(response)
+        except ValueError as e:
+            # If we get the wrong response, try a small delay and retry once
+            logger.warning(f"Got unexpected response for outlet status: {e}")
+            time.sleep(0.5)  # Small delay to let device settle
+            try:
+                response = self._send_command(WattBoxEndpoints.OUTLET_STATUS)
+                logger.debug(f"get_outlet_status retry command: {WattBoxEndpoints.OUTLET_STATUS}, response: {response}")
+                return parse_outlet_status_response(response)
+            except ValueError:
+                # If still failing, return empty list to prevent crashes
+                logger.error(f"Failed to get outlet status after retry, returning empty list")
+                return []
     
     def get_outlet_names(self) -> List[str]:
         """Get names of all outlets."""
         response = self._send_command(WattBoxEndpoints.OUTLET_NAMES)
         return parse_outlet_names_response(response)
     
-    def get_outlet_power_status(self, outlet: int) -> OutletInfo:
+    def get_outlet_power_status(self, outlet: int) -> Optional[OutletInfo]:
         """Get power status for specific outlet."""
         outlet_count = self.get_outlet_count()
         if not validate_outlet_number(outlet, outlet_count):
             raise ValueError(f"Invalid outlet number: {outlet}")
         
-        command = WattBoxEndpoints.outlet_power_status(outlet)
-        response = self._send_command(command)
-        return parse_outlet_power_response(response)
+        try:
+            command = WattBoxEndpoints.outlet_power_status(outlet)
+            response = self._send_command(command)
+            return parse_outlet_power_response(response)
+        except (ValueError, IndexError) as err:
+            # Some WattBox devices may not support individual outlet power monitoring
+            logger.debug(f"Outlet {outlet} power status not supported or failed: {err}")
+            return None
     
-    def get_all_outlets_info(self) -> List[OutletInfo]:
-        """Get complete information for all outlets."""
+    def get_all_outlets_info(self, include_power_data: bool = False) -> List[OutletInfo]:
+        """
+        Get complete information for all outlets.
+        
+        Args:
+            include_power_data: If True, also collect power data for each outlet
+        """
         outlet_count = self.get_outlet_count()
-        outlet_statuses = self.get_outlet_status()
-        outlet_names = self.get_outlet_names()
+        
+        # Try to get outlet statuses and names, but return empty list if they're unavailable
+        try:
+            outlet_statuses = self.get_outlet_status()
+        except Exception as e:
+            logger.error(f"Failed to get outlet statuses: {e}")
+            return []  # Return empty list to indicate unavailable
+        
+        try:
+            outlet_names = self.get_outlet_names()
+        except Exception as e:
+            logger.warning(f"Failed to get outlet names: {e}")
+            outlet_names = [f"Outlet {i+1}" for i in range(outlet_count)]  # Default names only
+        
+        # Get power data for all outlets if requested
+        power_data = {}
+        if include_power_data:
+            logger.debug("Including power data in outlet info collection")
+            power_data = self.get_all_outlets_power_data()
         
         outlets = []
         
@@ -349,18 +559,16 @@ class WattBoxClient:
             status = outlet_statuses[i] if i < len(outlet_statuses) else False
             name = outlet_names[i] if i < len(outlet_names) else f"Outlet {outlet_num}"
             
-            # Try to get power info (not supported on all models)
+            # Get power info if available
             power_watts = None
             current_amps = None
             voltage_volts = None
             
-            try:
-                power_info = self.get_outlet_power_status(outlet_num)
-                power_watts = power_info.power_watts
-                current_amps = power_info.current_amps
-                voltage_volts = power_info.voltage_volts
-            except (WattBoxCommandError, WattBoxResponseError):
-                pass  # Not supported on this model
+            if include_power_data and outlet_num in power_data and power_data[outlet_num]:
+                outlet_power = power_data[outlet_num]
+                power_watts = outlet_power.power_watts
+                current_amps = outlet_power.current_amps
+                voltage_volts = outlet_power.voltage_volts
             
             outlet_info = OutletInfo(
                 index=outlet_num,
@@ -413,18 +621,77 @@ class WattBoxClient:
     
     # Power Status Methods
     
-    def get_power_status(self) -> PowerStatus:
+    def get_power_status(self) -> Optional[PowerStatus]:
         """Get system power status."""
-        response = self._send_command(WattBoxEndpoints.POWER_STATUS)
-        return parse_power_status_response(response)
+        try:
+            response = self._send_command(WattBoxEndpoints.POWER_STATUS)
+            return parse_power_status_response(response)
+        except (ValueError, IndexError) as err:
+            # Some WattBox devices may not support the PowerStatus command
+            logger.debug(f"PowerStatus command not supported or failed: {err}")
+            return None
+    
+    def get_all_outlets_power_data(self, command_timeout: float = 5.0) -> Dict[int, Optional[OutletInfo]]:
+        """
+        Get power data for all outlets in a single bulk operation.
+        
+        This method optimizes communication by sending the next request immediately
+        after receiving a response, rather than using fixed delays.
+        
+        Args:
+            command_timeout: Timeout for individual outlet queries in seconds
+            
+        Returns:
+            Dictionary mapping outlet index to OutletInfo with power data, or None if unavailable
+        """
+        logger.debug("Starting optimized bulk outlet power data collection")
+        power_data = {}
+        
+        try:
+            outlet_count = self.get_outlet_count()
+            logger.debug(f"Collecting power data for {outlet_count} outlets")
+            
+            for outlet_num in range(1, outlet_count + 1):
+                try:
+                    start_time = time.time()
+                    logger.debug(f"Getting power data for outlet {outlet_num}")
+                    outlet_power = self.get_outlet_power_status(outlet_num)
+                    power_data[outlet_num] = outlet_power
+                    
+                    elapsed = time.time() - start_time
+                    if outlet_power:
+                        logger.debug(f"Outlet {outlet_num} power: {outlet_power.power_watts}W, {outlet_power.current_amps}A, {outlet_power.voltage_volts}V (took {elapsed:.2f}s)")
+                    else:
+                        logger.debug(f"Outlet {outlet_num} power data not available (took {elapsed:.2f}s)")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to get power data for outlet {outlet_num}: {e}")
+                    power_data[outlet_num] = None
+                
+                # No artificial delay - the next command will be sent immediately
+                # after the response is received and processed
+            
+            logger.debug(f"Completed optimized bulk power data collection for {len(power_data)} outlets")
+            return power_data
+            
+        except Exception as e:
+            logger.error(f"Error during bulk power data collection: {e}")
+            return {}
     
     # UPS Methods
     
     def get_ups_connection_status(self) -> bool:
         """Check if UPS is connected."""
-        response = self._send_command(WattBoxEndpoints.UPS_CONNECTION)
-        status = response.split("=")[1] if "=" in response else "0"
-        return bool(int(status))
+        try:
+            response = self._send_command(WattBoxEndpoints.UPS_CONNECTION)
+            logger.debug(f"UPS connection response: {response}")
+            status = response.split("=")[1] if "=" in response else "0"
+            # Ensure we only get the first value if there are multiple comma-separated values
+            status = status.split(",")[0].strip()
+            return bool(int(status))
+        except (ValueError, IndexError) as err:
+            logger.warning(f"Failed to parse UPS connection status: {err}")
+            return False
     
     def get_ups_status(self) -> UPSStatus:
         """Get UPS status information."""
@@ -435,9 +702,16 @@ class WattBoxClient:
     
     def get_auto_reboot_status(self) -> bool:
         """Get auto reboot status."""
-        response = self._send_command(WattBoxEndpoints.AUTO_REBOOT)
-        status = response.split("=")[1] if "=" in response else "0"
-        return bool(int(status))
+        try:
+            response = self._send_command(WattBoxEndpoints.AUTO_REBOOT)
+            logger.debug(f"Auto reboot response: {response}")
+            status = response.split("=")[1] if "=" in response else "0"
+            # Ensure we only get the first value if there are multiple comma-separated values
+            status = status.split(",")[0].strip()
+            return bool(int(status))
+        except (ValueError, IndexError) as err:
+            logger.warning(f"Failed to parse auto reboot status: {err}")
+            return False
     
     def set_auto_reboot(self, enabled: bool) -> bool:
         """Enable or disable auto reboot."""
@@ -458,6 +732,15 @@ class WattBoxClient:
         """Check if client is connected and authenticated."""
         return self._connection is not None and self._authenticated
     
+    def ping(self) -> bool:
+        """Test connection to the device with a simple command."""
+        try:
+            # Send a simple command to test connectivity
+            response = self._send_command(WattBoxEndpoints.MODEL)
+            return bool(response)
+        except Exception:
+            return False
+
     def get_model(self) -> str:
         """Get device model."""
         if self._model is not None:
@@ -478,77 +761,6 @@ class WattBoxClient:
         self._firmware = firmware
         return firmware
     
-    def ping(self) -> bool:
-        """Test connectivity with the device."""
-        try:
-            self.get_firmware_version()
-            return True
-        except Exception:
-            return False
-    
-    def _cleanup_connection(self) -> None:
-        """Clean up connection state."""
-        if self._connection:
-            try:
-                self._connection.close()
-            except Exception:
-                pass
-        self._connection = None
-        self._authenticated = False
-        self._connected = False
-
-    def _wait_for_login_prompt(self, timeout: Optional[float] = None) -> bytes:
-        """Wait for login prompt with multiple possible formats."""
-        if timeout is None:
-            timeout = self.timeout
-        
-        login_prompts = [b"login:", b"Login:", b"USERNAME:", b"Username:", b"User:", b"user:"]
-        return self._wait_for_any_prompt(login_prompts, timeout)
-
-    def _wait_for_password_prompt(self, timeout: Optional[float] = None) -> bytes:
-        """Wait for password prompt with multiple possible formats."""
-        if timeout is None:
-            timeout = self.timeout
-        
-        password_prompts = [b"password:", b"Password:", b"PASS:", b"Pass:", b"passwd:"]
-        return self._wait_for_any_prompt(password_prompts, timeout)
-
-    def _wait_for_any_prompt(self, prompts: List[bytes], timeout: float) -> bytes:
-        """Wait for any of the specified prompts."""
-        if not self._connection:
-            raise WattBoxConnectionError("Not connected")
-        
-        buffer = b""
-        start_time = time.time()
-        
-        while time.time() - start_time < timeout:
-            try:
-                self._connection.settimeout(0.1)
-                data = self._connection.recv(1024)
-                if not data:
-                    break
-                buffer += data
-                
-                # Log what we're receiving for debugging
-                logger.debug(f"Received data: {repr(buffer)}")
-                
-                # Check for any of the prompts (case insensitive)
-                buffer_lower = buffer.lower()
-                for prompt in prompts:
-                    if prompt.lower() in buffer_lower:
-                        logger.debug(f"Found prompt: {prompt}")
-                        return buffer
-                        
-            except socket.timeout:
-                continue
-            except Exception as e:
-                logger.debug(f"Exception reading data: {e}")
-                break
-        
-        # If we timeout, log what we received
-        logger.debug(f"Timeout waiting for prompts. Received: {repr(buffer)}")
-        raise WattBoxTimeoutError(f"Timeout waiting for prompts: {prompts}. Received: {repr(buffer)}")
-
     def _read_available_data(self, timeout: float = 2.0) -> str:
         """Read all available data from the connection."""
         if not self._connection:
@@ -631,3 +843,39 @@ class WattBoxClient:
                 break
         
         return buffer.decode('utf-8', errors='ignore').strip()
+
+    def _clear_input_buffer(self) -> None:
+        """Clear any buffered input data to prevent command/response mismatches."""
+        if not self._connection:
+            return
+            
+        try:
+            # Set a very short timeout to quickly drain any buffered data
+            original_timeout = self._connection.gettimeout()
+            self._connection.settimeout(0.01)
+            
+            drained_data = b""
+            while True:
+                try:
+                    data = self._connection.recv(1024)
+                    if not data:
+                        break
+                    drained_data += data
+                    # Limit how much we drain to prevent infinite loops
+                    if len(drained_data) > 4096:
+                        break
+                except socket.timeout:
+                    # No more data to read
+                    break
+                except Exception:
+                    break
+            
+            # Restore original timeout
+            if original_timeout is not None:
+                self._connection.settimeout(original_timeout)
+            
+            if drained_data:
+                logger.debug(f"Cleared {len(drained_data)} bytes from input buffer: {drained_data[:100]}...")
+                
+        except Exception as e:
+            logger.debug(f"Error clearing input buffer: {e}")

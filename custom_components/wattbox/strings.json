@@ -1,0 +1,38 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up WattBox",
+        "description": "Configure your WattBox device connection and power monitoring options.",
+        "data": {
+          "host": "Host IP Address",
+          "port": "Port",
+          "username": "Username", 
+          "password": "Password",
+          "name": "Device Name",
+          "enable_power_sensors": "Enable Power Monitoring Sensors"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure WattBox",
+        "description": "Update your WattBox device configuration and power monitoring options.",
+        "data": {
+          "host": "Host IP Address",
+          "port": "Port", 
+          "username": "Username",
+          "password": "Password",
+          "name": "Device Name",
+          "enable_power_sensors": "Enable Power Monitoring Sensors"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to WattBox device. Please check the host and port.",
+      "invalid_auth": "Invalid username or password.",
+      "unknown": "Unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This WattBox device is already configured."
+    }
+  }
+}

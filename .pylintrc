@@ -1,0 +1,22 @@
+[MASTER]
+extension-pkg-whitelist=homeassistant
+ignore-patterns=__pycache__
+
+[MESSAGES CONTROL]
+disable=
+    import-error,
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    too-few-public-methods,
+    unused-argument,
+    broad-except,
+    line-too-long
+
+[FORMAT]
+max-line-length=100
+
+[SIMILARITIES]
+min-similarity-lines=4
+ignore-comments=yes
+ignore-docstrings=yes

@@ -3,13 +3,13 @@
 import logging
 from typing import Optional
 
-from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass  # type: ignore
+from homeassistant.config_entries import ConfigEntry  # type: ignore
+from homeassistant.core import HomeAssistant  # type: ignore
+from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
+from homeassistant.helpers.update_coordinator import CoordinatorEntity  # type: ignore
 
-from .const import DOMAIN
+from .const import DOMAIN, get_outlet_device_info, get_wattbox_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,17 +24,15 @@ async def async_setup_entry(
     
     entities = []
     
-    # Auto reboot status
+    # System binary sensors (on main WattBox device)
     entities.append(WattBoxAutoRebootSensor(coordinator))
-    
-    # UPS connected status
     entities.append(WattBoxUPSConnectedSensor(coordinator))
     
-    # UPS on battery status (if UPS is connected)
+    # UPS on battery status (if UPS is connected, on main WattBox device)
     if coordinator.data and coordinator.data.get("ups_connected"):
         entities.append(WattBoxUPSOnBatterySensor(coordinator))
     
-    # Individual outlet status sensors
+    # Individual outlet status sensors (on individual outlet devices)
     if coordinator.data and coordinator.data.get("outlets"):
         for outlet in coordinator.data["outlets"]:
             entities.append(WattBoxOutletStatusSensor(coordinator, outlet.index, outlet.name))
@@ -56,15 +54,9 @@ class WattBoxBaseBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     @property
     def device_info(self):
-        """Return device information."""
+        """Return device information for main WattBox device."""
         system_info = self.coordinator.data.get("system_info") if self.coordinator.data else None
-        return {
-            "identifiers": {(DOMAIN, self.coordinator.client.host)},
-            "name": "WattBox",
-            "manufacturer": "SnapAV",
-            "model": getattr(system_info, "model", "Unknown") if system_info else "Unknown",
-            "sw_version": getattr(system_info, "firmware", "Unknown") if system_info else "Unknown",
-        }
+        return get_wattbox_device_info(self.coordinator.client.host, system_info)
 
 
 class WattBoxAutoRebootSensor(WattBoxBaseBinarySensor):
@@ -110,14 +102,28 @@ class WattBoxUPSOnBatterySensor(WattBoxBaseBinarySensor):
         return getattr(ups_status, "on_battery", False)
 
 
-class WattBoxOutletStatusSensor(WattBoxBaseBinarySensor):
+class WattBoxOutletStatusSensor(CoordinatorEntity, BinarySensorEntity):
     """Outlet status binary sensor."""
 
     def __init__(self, coordinator, outlet_index: int, outlet_name: str):
         """Initialize the outlet status sensor."""
+        super().__init__(coordinator)
         self._outlet_index = outlet_index
         self._outlet_name = outlet_name
-        super().__init__(coordinator, f"outlet_{outlet_index}_status", f"{outlet_name} Status", BinarySensorDeviceClass.POWER)
+        self._attr_unique_id = f"{coordinator.client.host}_outlet_{outlet_index}_status"
+        self._attr_name = "Status"  # Simple name since it's on the outlet device
+        self._attr_device_class = BinarySensorDeviceClass.POWER
+
+    @property
+    def device_info(self):
+        """Return device information for this outlet device."""
+        system_info = self.coordinator.data.get("system_info") if self.coordinator.data else None
+        return get_outlet_device_info(
+            self.coordinator.client.host, 
+            self._outlet_index, 
+            self._outlet_name,
+            system_info
+        )
 
     @property
     def is_on(self) -> Optional[bool]:

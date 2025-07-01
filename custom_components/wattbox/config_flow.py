@@ -5,13 +5,21 @@ import logging
 from typing import Any, Dict, Optional
 
 import voluptuous as vol
-from homeassistant import config_entries, core, exceptions
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
-from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResult
-import homeassistant.helpers.config_validation as cv
+from homeassistant import config_entries, core, exceptions  # type: ignore
+from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT, CONF_USERNAME  # type: ignore
+from homeassistant.core import HomeAssistant  # type: ignore
+from homeassistant.data_entry_flow import FlowResult  # type: ignore
+import homeassistant.helpers.config_validation as cv  # type: ignore
 
-from .const import DOMAIN, DEFAULT_NAME, DEFAULT_PASSWORD, DEFAULT_PORT, DEFAULT_USER
+from .const import (
+    DOMAIN, 
+    DEFAULT_NAME, 
+    DEFAULT_PASSWORD, 
+    DEFAULT_PORT, 
+    DEFAULT_USER,
+    CONF_ENABLE_POWER_SENSORS,
+    DEFAULT_ENABLE_POWER_SENSORS,
+)
 
 # Import API library components directly
 from .pywattbox_api_v2_4.client import WattBoxClient
@@ -31,6 +39,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_USERNAME, default=DEFAULT_USER): cv.string,
         vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+        vol.Optional(CONF_ENABLE_POWER_SENSORS, default=DEFAULT_ENABLE_POWER_SENSORS): cv.boolean,
     }
 )
 
@@ -173,6 +182,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(CONF_USERNAME, default=user_input.get(CONF_USERNAME, DEFAULT_USER)): cv.string,
                     vol.Optional(CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
                     vol.Optional(CONF_NAME, default=user_input.get(CONF_NAME, DEFAULT_NAME)): cv.string,
+                    vol.Optional(CONF_ENABLE_POWER_SENSORS, default=user_input.get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS)): cv.boolean,
                 }
             ),
             errors=errors,
