@@ -4,154 +4,114 @@ Component to integrate with wattbox.
 For more details about this component, please refer to
 https://github.com/bballdavis/hass-wattbox/
 """
+import asyncio
 import logging
-import os
-from datetime import datetime
-from functools import partial
-from typing import Final, List
+from datetime import timedelta
+from typing import Any, Dict, List
 
-import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
-from homeassistant.const import (
-    CONF_HOST,
-    CONF_NAME,
-    CONF_PASSWORD,
-    CONF_PORT,
-    CONF_RESOURCES,
-    CONF_SCAN_INTERVAL,
-    CONF_USERNAME,
-)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import discovery
-from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.helpers.typing import ConfigType
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import (
-    BINARY_SENSOR_TYPES,
-    DEFAULT_NAME,
-    DEFAULT_PASSWORD,
-    DEFAULT_PORT,
-    DEFAULT_SCAN_INTERVAL,
-    DEFAULT_USER,
-    DOMAIN,
-    DOMAIN_DATA,
-    PLATFORMS,
-    REQUIRED_FILES,
-    SENSOR_TYPES,
-    STARTUP,
-    TOPIC_UPDATE,
-)
-
-REQUIREMENTS: Final[List[str]] = ["pywattbox>=0.4.0,<0.7.0"]
+from .const import DOMAIN
+from .pywattbox_api_v2_4 import WattBoxClient, WattBoxConnectionError, WattBoxError
 
 _LOGGER = logging.getLogger(__name__)
 
-ALL_SENSOR_TYPES: Final[List[str]] = [*BINARY_SENSOR_TYPES.keys(), *SENSOR_TYPES.keys()]
-
-WATTBOX_HOST_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_HOST): cv.string,
-        vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.string,
-        vol.Optional(CONF_USERNAME, default=DEFAULT_USER): cv.string,
-        vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
-        vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-        vol.Optional(CONF_RESOURCES, default=ALL_SENSOR_TYPES): vol.All(
-            cv.ensure_list, [vol.In(ALL_SENSOR_TYPES)]
-        ),
-        vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): cv.time_period,
-    }
-)
-
-CONFIG_SCHEMA = vol.Schema(
-    {
-        DOMAIN: vol.All(cv.ensure_list, [WATTBOX_HOST_SCHEMA]),
-    },
-    extra=vol.ALLOW_EXTRA,
-)
+PLATFORMS: List[str] = ["sensor", "switch", "binary_sensor"]
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up this component."""
-    from pywattbox import WattBox  # pylint: disable=import-outside-toplevel
+class WattBoxUpdateCoordinator(DataUpdateCoordinator):
+    """WattBox data update coordinator."""
 
-    # Print startup message
-    _LOGGER.info(STARTUP)
-
-    # Check that all required files are present
-    file_check = await check_files(hass)
-    if not file_check:
-        return False
-
-    hass.data[DOMAIN_DATA] = dict()
-
-    for wattbox_host in config[DOMAIN]:
-        _LOGGER.debug(repr(wattbox_host))
-        # Create DATA dict
-        host = wattbox_host.get(CONF_HOST)
-        password = wattbox_host.get(CONF_PASSWORD)
-        port = wattbox_host.get(CONF_PORT)
-        username = wattbox_host.get(CONF_USERNAME)
-        name = wattbox_host.get(CONF_NAME)
-
-        hass.data[DOMAIN_DATA][name] = await hass.async_add_executor_job(
-            WattBox, host, port, username, password
+    def __init__(self, hass: HomeAssistant, client: WattBoxClient) -> None:
+        """Initialize the coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=DOMAIN,
+            update_interval=timedelta(seconds=30),
         )
+        self.client = client
+        self.device_info = None
 
-        # Load platforms
-        for platform in PLATFORMS:
-            # Get platform specific configuration
-            hass.async_create_task(
-                discovery.async_load_platform(
-                    hass, platform, DOMAIN, wattbox_host, config
-                )
+    async def _async_update_data(self) -> Dict[str, Any]:
+        """Fetch data from WattBox."""
+        try:
+            # Run the blocking calls in the executor
+            device_info = await self.hass.async_add_executor_job(
+                self.client.get_device_info, True  # Force refresh
             )
+            
+            return {
+                "device_info": device_info,
+                "outlets": device_info.outlets,
+                "system_info": device_info.system_info,
+                "power_status": device_info.power_status,
+                "ups_status": device_info.ups_status,
+                "ups_connected": device_info.ups_connected,
+                "auto_reboot_enabled": device_info.auto_reboot_enabled,
+            }
+            
+        except WattBoxConnectionError as err:
+            raise UpdateFailed(f"Error communicating with WattBox: {err}")
+        except WattBoxError as err:
+            raise UpdateFailed(f"Error updating WattBox data: {err}")
 
-        scan_interval = wattbox_host.get(CONF_SCAN_INTERVAL)
-        async_track_time_interval(
-            hass, partial(update_data, hass=hass, name=name), scan_interval
-        )
 
-    # Extra logging to ensure the right outlets are set up.
-    _LOGGER.debug(", ".join([str(v) for _, v in hass.data[DOMAIN_DATA].items()]))
-    _LOGGER.debug(repr(hass.data[DOMAIN_DATA]))
-    for _, wattbox in hass.data[DOMAIN_DATA].items():
-        _LOGGER.debug("%s has %s outlets", wattbox, len(wattbox.outlets))
-        for outlet in wattbox.outlets:
-            _LOGGER.debug("Outlet: %s - %s", outlet, repr(outlet))
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up WattBox from a config entry."""
+    host = entry.data[CONF_HOST]
+    port = entry.data.get(CONF_PORT, 23)
+    username = entry.data.get(CONF_USERNAME, "wattbox")
+    password = entry.data.get(CONF_PASSWORD, "wattbox")
 
-    return True
+    # Create the client
+    client = WattBoxClient(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        timeout=10.0
+    )
 
-
-async def update_data(_: datetime, hass: HomeAssistant, name: str) -> None:
-    """Update data."""
-
-    # This is where the main logic to update platform data goes.
+    # Test the connection
     try:
-        await hass.async_add_executor_job(hass.data[DOMAIN_DATA][name].update)
-        _LOGGER.debug(
-            "Updated: %s - %s",
-            hass.data[DOMAIN_DATA][name],
-            repr(hass.data[DOMAIN_DATA][name]),
-        )
-        # Send update to topic for entities to see
-        async_dispatcher_send(hass, TOPIC_UPDATE.format(DOMAIN, name))
-    except Exception as error:  # pylint: disable=broad-except
-        _LOGGER.error("Could not update data - %s", error)
+        await hass.async_add_executor_job(client.connect)
+        await hass.async_add_executor_job(client.ping)
+        await hass.async_add_executor_job(client.disconnect)
+    except WattBoxError as err:
+        _LOGGER.error("Failed to connect to WattBox at %s: %s", host, err)
+        raise ConfigEntryNotReady from err
 
+    # Create the coordinator
+    coordinator = WattBoxUpdateCoordinator(hass, client)
 
-async def check_files(hass: HomeAssistant) -> bool:
-    """Return bool that indicates if all files are present."""
+    # Fetch initial data
+    await coordinator.async_config_entry_first_refresh()
 
-    # Verify that the user downloaded all files.
-    base = f"{hass.config.path()}/custom_components/{DOMAIN}"
-    missing = []
-    for file in REQUIRED_FILES:
-        fullpath = f"{base}/{file}"
-        if not os.path.exists(fullpath):
-            missing.append(file)
+    # Store the coordinator
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    if missing:
-        _LOGGER.critical("The following files are missing: %s", str(missing))
-        return False
+    # Set up platforms
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
     return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    
+    if unload_ok:
+        coordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        # Disconnect the client
+        try:
+            await hass.async_add_executor_job(coordinator.client.disconnect)
+        except Exception as err:
+            _LOGGER.debug("Error disconnecting from WattBox: %s", err)
+
+    return unload_ok
