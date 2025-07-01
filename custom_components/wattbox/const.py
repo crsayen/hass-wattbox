@@ -42,9 +42,9 @@ PLUG_ICON: Final[str] = "mdi:power-socket-us"
 
 # Defaults
 DEFAULT_NAME: Final[str] = "WattBox"
-DEFAULT_PASSWORD: Final[str] = DOMAIN
-DEFAULT_PORT: Final[int] = 80
-DEFAULT_USER: Final[str] = DOMAIN
+DEFAULT_PASSWORD: Final[str] = "wattbox"
+DEFAULT_PORT: Final[int] = 23
+DEFAULT_USER: Final[str] = "wattbox"
 DEFAULT_SCAN_INTERVAL: Final[timedelta] = timedelta(seconds=30)
 
 TOPIC_UPDATE: Final[str] = "{}_data_update_{}"
