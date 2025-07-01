@@ -12,8 +12,10 @@ from homeassistant.data_entry_flow import FlowResult
 import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN, DEFAULT_NAME, DEFAULT_PASSWORD, DEFAULT_PORT, DEFAULT_USER
-from pywattbox_api_v2_4 import WattBoxClient
-from pywattbox_api_v2_4.exceptions import (
+
+# Import API library components directly
+from .pywattbox_api_v2_4.client import WattBoxClient
+from .pywattbox_api_v2_4.exceptions import (
     WattBoxConnectionError,
     WattBoxAuthenticationError,
     WattBoxError,

@@ -1,4 +1,8 @@
 {
-    "name": "Wattbox",
-    "homeassistant": "2022.3.0"
+    "name": "WattBox",
+    "homeassistant": "2023.1.0",
+    "hacs": "1.6.0",
+    "iot_class": "Local Polling",
+    "zip_release": true,
+    "filename": "wattbox.zip"
 }

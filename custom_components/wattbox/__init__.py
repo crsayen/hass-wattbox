@@ -16,7 +16,10 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN
-from .pywattbox_api_v2_4 import WattBoxClient, WattBoxConnectionError, WattBoxError
+
+# Import API library components directly
+from .pywattbox_api_v2_4.client import WattBoxClient
+from .pywattbox_api_v2_4.exceptions import WattBoxConnectionError, WattBoxError
 
 _LOGGER = logging.getLogger(__name__)
 
