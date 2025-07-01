@@ -175,12 +175,12 @@ Based on [custom-components/integration_blueprint][blueprint]
 [hacs]: https://hacs.xyz/
 [blueprint]: https://github.com/custom-components/integration_blueprint
 [buymecoffee]: https://www.buymeacoffee.com/bballdavis
-[buymecoffeebadge]: https://img.shields.io/badge/Buy%20Me%20A%20Coffee-donate-yellow
+[buymecoffeebadge]: https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-yellow
 [commits-shield]: https://img.shields.io/github/last-commit/bballdavis/hass-wattbox
 [commits]: https://github.com/bballdavis/hass-wattbox/commits/master
 [discord]: https://discord.gg/Qa5fW2R
 [discord-shield]: https://img.shields.io/discord/330944238910963714
-[forum-shield]: https://img.shields.io/badge/HASS-Discord-brightgreen
+[forum-shield]: https://img.shields.io/badge/Community-HASS%20Forum-brightgreen
 [forum]: https://community.home-assistant.io/
 [license-shield]: https://img.shields.io/github/license/bballdavis/hass-wattbox
 [maintenance-shield]: https://img.shields.io/badge/Maintainer-Philip%20Davis-blue
