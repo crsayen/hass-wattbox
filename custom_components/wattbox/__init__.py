@@ -43,12 +43,6 @@ class WattBoxUpdateCoordinator(DataUpdateCoordinator):
         # Cache for outlet power info to avoid excessive API calls
         self._power_cache = {}
         self._power_cache_expire = 10  # Cache for 10 seconds
-        
-        # Registry for entities to enable cross-entity updates
-        self._entities = {
-            "master_switch": None,
-            "outlet_switches": {},  # outlet_index -> entity
-        }
 
     async def _async_update_data(self) -> Dict[str, Any]:
         """Fetch data from WattBox."""
@@ -155,37 +149,6 @@ class WattBoxUpdateCoordinator(DataUpdateCoordinator):
                 "voltage_volts": None
             }
 
-    def register_master_switch(self, entity):
-        """Register the master switch entity."""
-        self._entities["master_switch"] = entity
-
-    def register_outlet_switch(self, outlet_index: int, entity):
-        """Register an outlet switch entity."""
-        self._entities["outlet_switches"][outlet_index] = entity
-
-    def notify_outlet_state_change(self, outlet_index: int, new_state: bool):
-        """Notify other entities when an outlet state changes."""
-        _LOGGER.debug(f"Notifying outlet {outlet_index} state change to {new_state}")
-        
-        # Update master switch if it exists
-        if self._entities["master_switch"]:
-            _LOGGER.debug("Updating master switch state due to outlet change")
-            self._entities["master_switch"].async_write_ha_state()
-        
-        # Update other outlet switches if needed
-        for index, entity in self._entities["outlet_switches"].items():
-            if index != outlet_index and entity:
-                entity.async_write_ha_state()
-
-    def notify_master_switch_change(self):
-        """Notify all outlet switches when master switch changes."""
-        _LOGGER.debug("Notifying all outlet switches of master switch change")
-        
-        # Update all outlet switches
-        for entity in self._entities["outlet_switches"].values():
-            if entity:
-                entity.async_write_ha_state()
-                
     def get_master_switch_state(self) -> Optional[bool]:
         """Get the current state of the master switch based on outlet states."""
         if not self.data or not self.data.get("outlets"):

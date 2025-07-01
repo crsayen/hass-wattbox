@@ -137,6 +137,15 @@ class WattBoxPowerSensor(WattBoxBaseSensor):
         return None
 
     @property
+    def suggested_display_precision(self) -> Optional[int]:
+        """Return the suggested display precision for this sensor."""
+        if self._sensor_type == "current":
+            return 2  # 2 decimal places for current
+        elif self._sensor_type in ["power", "voltage"]:
+            return 0  # 0 decimal places for power and voltage
+        return None
+
+    @property
     def native_value(self) -> Any:
         """Return the sensor value."""
         if not self.coordinator.data or not self.coordinator.data.get("power_status"):
@@ -144,16 +153,13 @@ class WattBoxPowerSensor(WattBoxBaseSensor):
             
         power_status = self.coordinator.data["power_status"]
         
-        # Map sensor types to PowerStatus attributes with appropriate precision
+        # Return raw values without rounding - let Home Assistant handle display precision
         if self._sensor_type == "current":
-            value = power_status.current_amps
-            return round(value, 2) if value is not None else None
+            return power_status.current_amps
         elif self._sensor_type == "power":
-            value = power_status.power_watts
-            return round(value, 0) if value is not None else None
+            return power_status.power_watts
         elif self._sensor_type == "voltage":
-            value = power_status.voltage_volts
-            return round(value, 0) if value is not None else None
+            return power_status.voltage_volts
         
         return None
 
@@ -221,6 +227,15 @@ class WattBoxOutletSensor(CoordinatorEntity, SensorEntity):
             return SensorDeviceClass.VOLTAGE
         return None
 
+    @property
+    def suggested_display_precision(self) -> Optional[int]:
+        """Return the suggested display precision for this sensor."""
+        if self._sensor_type == "current":
+            return 2  # 2 decimal places for current
+        elif self._sensor_type in ["power", "voltage"]:
+            return 0  # 0 decimal places for power and voltage
+        return None
+
     async def async_update(self) -> None:
         """Update the sensor."""
         # Call parent update first
@@ -252,28 +267,25 @@ class WattBoxOutletSensor(CoordinatorEntity, SensorEntity):
             if self._sensor_type == "power":
                 value = self._cached_power_data.get("power_watts")
                 if value is not None:
-                    return round(value, 0)
+                    return value
             elif self._sensor_type == "current":
                 value = self._cached_power_data.get("current_amps")
                 if value is not None:
-                    return round(value, 2)
+                    return value
             elif self._sensor_type == "voltage":
                 value = self._cached_power_data.get("voltage_volts")
                 if value is not None:
-                    return round(value, 0)
+                    return value
         
         # Fall back to coordinator data for basic outlet info (though this will likely be None for power data)
         for outlet in self.coordinator.data["outlets"]:
             if outlet.index == self._outlet_index:
                 if self._sensor_type == "power":
-                    value = outlet.power_watts
-                    return round(value, 0) if value is not None else None
+                    return outlet.power_watts
                 elif self._sensor_type == "current":
-                    value = outlet.current_amps
-                    return round(value, 2) if value is not None else None
+                    return outlet.current_amps
                 elif self._sensor_type == "voltage":
-                    value = outlet.voltage_volts
-                    return round(value, 0) if value is not None else None
+                    return outlet.voltage_volts
         
         # If no data is available, return None (sensor will show as unavailable)
         return None

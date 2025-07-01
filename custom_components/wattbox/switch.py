@@ -71,9 +71,6 @@ class WattBoxOutletSwitch(CoordinatorEntity, SwitchEntity):
         self._last_operation_time = 0
         self._cooldown_period = 5   # Reduced to 5 seconds cooldown
         self._operation_delay = 2   # Reduced to 2 second delay to check if changes took effect
-        
-        # Register with coordinator for cross-entity updates
-        coordinator.register_outlet_switch(outlet_index, self)
 
     @property
     def device_info(self):
@@ -155,9 +152,6 @@ class WattBoxOutletSwitch(CoordinatorEntity, SwitchEntity):
                 
                 # Request a coordinator refresh to update all related entities
                 await self.coordinator.async_request_refresh()
-                
-                # Notify other entities of the state change
-                self.coordinator.notify_outlet_state_change(self._outlet_index, True)
             else:
                 _LOGGER.error("Failed to turn on outlet %s", self._outlet_index)
         except Exception as err:
@@ -187,9 +181,6 @@ class WattBoxOutletSwitch(CoordinatorEntity, SwitchEntity):
                 
                 # Request a coordinator refresh to update all related entities
                 await self.coordinator.async_request_refresh()
-                
-                # Notify other entities of the state change
-                self.coordinator.notify_outlet_state_change(self._outlet_index, False)
             else:
                 _LOGGER.error("Failed to turn off outlet %s", self._outlet_index)
         except Exception as err:
@@ -207,9 +198,6 @@ class WattBoxMasterSwitch(WattBoxBaseSwitch):
         self._last_operation_time = 0
         self._cooldown_period = 5   # Reduced to 5 seconds cooldown
         self._operation_delay = 2   # Reduced to 2 second delay to check if changes took effect
-        
-        # Register with coordinator for cross-entity updates
-        coordinator.register_master_switch(self)
 
     @property
     def is_on(self) -> Optional[bool]:
@@ -274,9 +262,6 @@ class WattBoxMasterSwitch(WattBoxBaseSwitch):
                 
                 # Trigger a coordinator refresh to update all outlet states
                 await self.coordinator.async_request_refresh()
-                
-                # Notify all outlet switches of the change
-                self.coordinator.notify_master_switch_change()
         except Exception as err:
             _LOGGER.error("Error turning on all outlets: %s", err)
 
@@ -305,9 +290,6 @@ class WattBoxMasterSwitch(WattBoxBaseSwitch):
                 
                 # Trigger a coordinator refresh to update all outlet states
                 await self.coordinator.async_request_refresh()
-                
-                # Notify all outlet switches of the change
-                self.coordinator.notify_master_switch_change()
             else:
                 _LOGGER.error("Failed to turn off all outlets")
         except Exception as err:

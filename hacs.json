@@ -4,5 +4,4 @@
     "hacs": "1.6.0",
     "iot_class": "Local Polling",
     "zip_release": true,
-    "filename": "wattbox.zip"
 }
