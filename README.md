@@ -175,14 +175,14 @@ Based on [custom-components/integration_blueprint][blueprint]
 [hacs]: https://hacs.xyz/
 [blueprint]: https://github.com/custom-components/integration_blueprint
 [buymecoffee]: https://www.buymeacoffee.com/bballdavis
-[buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow
+[buymecoffeebadge]: https://img.shields.io/badge/Buy%20Me%20A%20Coffee-donate-yellow
 [commits-shield]: https://img.shields.io/github/last-commit/bballdavis/hass-wattbox
 [commits]: https://github.com/bballdavis/hass-wattbox/commits/master
 [discord]: https://discord.gg/Qa5fW2R
 [discord-shield]: https://img.shields.io/discord/330944238910963714
-[forum-shield]: https://img.shields.io/badge/community-forum-brightgreen
+[forum-shield]: https://img.shields.io/badge/HASS-Discord-brightgreen
 [forum]: https://community.home-assistant.io/
 [license-shield]: https://img.shields.io/github/license/bballdavis/hass-wattbox
 [maintenance-shield]: https://img.shields.io/badge/Maintainer-Philip%20Davis-blue
 [hacs]: https://github.com/custom-components/hacs
-[hacsbadge]: https://img.shields.io/badge/HACS-Custom-orange
+[hacsbadge]: https://img.shields.io/badge/HACS-Custom%20Integration-orange
