@@ -26,6 +26,7 @@ jobs:
         with:
           ref: beta
           path: hass-wattbox
+          token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Checkout PyWattBox library repository
         uses: actions/checkout@v4
@@ -133,8 +134,70 @@ jobs:
           echo "changed_files<<EOF" >> $GITHUB_OUTPUT
           echo -e "$CHANGED_FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Copy updated files and commit
+        if: steps.compare.outputs.versions_match == 'false' || steps.compare-files.outputs.changes_detected == 'true'
+        run: |
+          cd hass-wattbox
           
-      - name: Create issue if outdated
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          echo "📁 Copying PyWattBox library files..."
+          
+          # Ensure target directory exists
+          mkdir -p custom_components/wattbox/pywattbox
+          
+          # Copy all Python files from the PyWattBox repository
+          if [ -d "../pywattbox/pywattbox" ]; then
+            cp -r ../pywattbox/pywattbox/* custom_components/wattbox/pywattbox/
+            echo "✅ Files copied successfully"
+          else
+            echo "❌ Source directory not found"
+            exit 1
+          fi
+          
+          # Check if there are any changes to commit
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "ℹ️ No changes detected after copying files"
+          else
+            echo "📝 Changes detected, creating commit..."
+            
+            # Add all changes
+            git add custom_components/wattbox/pywattbox/
+            
+            # Create commit message
+            CURRENT_VERSION="${{ steps.compare.outputs.current_version }}"
+            LATEST_VERSION="${{ steps.compare.outputs.latest_version }}"
+            
+            if [ "${{ steps.compare.outputs.versions_match }}" == "false" ]; then
+              COMMIT_MSG="Update PyWattBox library from v${CURRENT_VERSION} to v${LATEST_VERSION}"
+            else
+              COMMIT_MSG="Update PyWattBox library files (v${LATEST_VERSION})"
+            fi
+            
+            # Add detailed commit body
+            COMMIT_BODY=""
+            if [ "${{ steps.compare-files.outputs.changes_detected }}" == "true" ]; then
+              COMMIT_BODY="${COMMIT_BODY}Updated files:${{ steps.compare-files.outputs.changed_files }}"
+            fi
+            COMMIT_BODY="${COMMIT_BODY}
+
+Auto-updated from eseglem/pywattbox repository
+Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            
+            # Commit the changes
+            git commit -m "$COMMIT_MSG" -m "$COMMIT_BODY"
+            
+            # Push the changes
+            git push origin beta
+            
+            echo "✅ Changes committed and pushed to beta branch"
+            echo "commit_created=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create summary comment
         if: steps.compare.outputs.versions_match == 'false' || steps.compare-files.outputs.changes_detected == 'true'
         uses: actions/github-script@v7
         with:
@@ -146,106 +209,70 @@ jobs:
             const versionsMatch = '${{ steps.compare.outputs.versions_match }}' === 'true';
             const changesDetected = '${{ steps.compare-files.outputs.changes_detected }}' === 'true';
             
-            // Check if there's already an open issue
-            const issues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: ['pywattbox-update']
-            });
-            
-            const existingIssue = issues.data.find(issue => 
-              issue.title.includes('PyWattBox Library Update Available')
-            );
-            
-            let body = `## 🔄 PyWattBox Library Update Available\n\n`;
-            
-            if (!versionsMatch) {
-              body += `### Version Mismatch\n`;
-              body += `- **Current version**: \`${currentVersion}\`\n`;
-              body += `- **Latest version**: \`${latestVersion}\`\n\n`;
-            }
-            
-            if (changesDetected) {
-              body += `### File Changes Detected\n`;
-              body += `The following files have differences:\n${changedFiles}\n\n`;
-            }
-            
-            body += `### Action Required\n`;
-            body += `Please update the PyWattBox library in the \`custom_components/wattbox/pywattbox/\` folder on the **beta branch** with the latest version from [eseglem/pywattbox](https://github.com/eseglem/pywattbox).\n\n`;
-            body += `### How to Update\n`;
-            body += `1. Download the latest files from the [eseglem/pywattbox repository](https://github.com/eseglem/pywattbox/tree/main/pywattbox)\n`;
-            body += `2. Replace the files in \`custom_components/wattbox/pywattbox/\` on the beta branch\n`;
-            body += `3. Test the integration to ensure compatibility\n`;
-            body += `4. Update the version number if needed\n\n`;
-            body += `---\n`;
-            body += `*This issue was automatically created by the PyWattBox library version check workflow.*`;
-            
-            if (existingIssue) {
-              // Update existing issue
-              await github.rest.issues.update({
+            // Only create an issue if this is a scheduled run or manual trigger
+            if (context.eventName === 'schedule' || context.eventName === 'workflow_dispatch') {
+              // Check if there's already an open issue
+              const issues = await github.rest.issues.listForRepo({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: existingIssue.number,
-                body: body
+                state: 'open',
+                labels: ['pywattbox-update']
               });
               
-              // Add a comment about the update
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existingIssue.number,
-                body: `🔄 **Update**: Library version check ran again on ${new Date().toISOString().split('T')[0]}`
-              });
+              const existingIssue = issues.data.find(issue => 
+                issue.title.includes('PyWattBox Library Auto-Update')
+              );
               
-              console.log(`Updated existing issue #${existingIssue.number}`);
-            } else {
-              // Create new issue
-              const issue = await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: `PyWattBox Library Update Available (v${latestVersion})`,
-                body: body,
-                labels: ['pywattbox-update', 'enhancement']
-              });
+              let body = `## 🔄 PyWattBox Library Auto-Update Completed\n\n`;
               
-              console.log(`Created new issue #${issue.data.number}`);
-            }
-            
-      - name: Close issue if up to date
-        if: steps.compare.outputs.versions_match == 'true' && steps.compare-files.outputs.changes_detected == 'false'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            // Check if there's an open issue to close
-            const issues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: ['pywattbox-update']
-            });
-            
-            const existingIssue = issues.data.find(issue => 
-              issue.title.includes('PyWattBox Library Update Available')
-            );
-            
-            if (existingIssue) {
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existingIssue.number,
-                state: 'closed'
-              });
+              if (!versionsMatch) {
+                body += `### Version Updated\n`;
+                body += `- **Previous version**: \`${currentVersion}\`\n`;
+                body += `- **Updated to version**: \`${latestVersion}\`\n\n`;
+              }
               
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existingIssue.number,
-                body: `✅ **Resolved**: PyWattBox library is now up to date. Closing this issue automatically.`
-              });
+              if (changesDetected) {
+                body += `### Files Updated\n`;
+                body += `The following files were updated:\n${changedFiles}\n\n`;
+              }
               
-              console.log(`Closed issue #${existingIssue.number} as library is up to date`);
+              body += `### ✅ Automatic Update Completed\n`;
+              body += `The PyWattBox library has been automatically updated on the **beta branch**.\n\n`;
+              body += `### Next Steps\n`;
+              body += `1. Review the changes in the beta branch\n`;
+              body += `2. Test the integration to ensure compatibility\n`;
+              body += `3. Merge to main branch when ready\n\n`;
+              body += `### Commit Details\n`;
+              body += `- **Branch**: beta\n`;
+              body += `- **Workflow Run**: [View Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n\n`;
+              body += `---\n`;
+              body += `*This update was automatically performed by the PyWattBox library update workflow.*`;
+              
+              if (existingIssue) {
+                // Update existing issue
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: existingIssue.number,
+                  title: `PyWattBox Library Auto-Update Completed (v${latestVersion})`,
+                  body: body,
+                  state: 'closed'
+                });
+                
+                console.log(`Updated and closed existing issue #${existingIssue.number}`);
+              } else {
+                // Create new issue
+                const issue = await github.rest.issues.create({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title: `PyWattBox Library Auto-Update Completed (v${latestVersion})`,
+                  body: body,
+                  labels: ['pywattbox-update', 'automated'],
+                  state: 'closed'
+                });
+                
+                console.log(`Created new issue #${issue.data.number}`);
+              }
             }
             
       - name: Summary
@@ -260,8 +287,8 @@ jobs:
           
           if [ "${{ steps.compare.outputs.versions_match }}" == "false" ] || [ "${{ steps.compare-files.outputs.changes_detected }}" == "true" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ⚠️ Action Required" >> $GITHUB_STEP_SUMMARY
-            echo "The PyWattBox library needs to be updated on the beta branch. Check the issues tab for details." >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ Auto-Update Completed" >> $GITHUB_STEP_SUMMARY
+            echo "The PyWattBox library has been automatically updated on the beta branch. Please review and test the changes." >> $GITHUB_STEP_SUMMARY
           else
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### ✅ All Good" >> $GITHUB_STEP_SUMMARY
