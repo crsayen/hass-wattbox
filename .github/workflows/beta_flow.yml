@@ -177,18 +177,10 @@ jobs:
               COMMIT_MSG="Update PyWattBox library files (v${LATEST_VERSION})"
             fi
             
-            # Add detailed commit body
-            COMMIT_BODY=""
-            if [ "${{ steps.compare-files.outputs.changes_detected }}" == "true" ]; then
-              COMMIT_BODY="${COMMIT_BODY}Updated files:${{ steps.compare-files.outputs.changed_files }}"
-            fi
-            COMMIT_BODY="${COMMIT_BODY}
-
-Auto-updated from eseglem/pywattbox repository
-Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            
             # Commit the changes
-            git commit -m "$COMMIT_MSG" -m "$COMMIT_BODY"
+            git commit -m "$COMMIT_MSG" -m "Auto-updated from eseglem/pywattbox repository
+
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             
             # Push the changes
             git push origin beta
