@@ -1,4 +1,4 @@
-name: Check PyWattBox API Library Version
+name: Check PyWattBox-800 Library Version
 
 on:
   schedule:
