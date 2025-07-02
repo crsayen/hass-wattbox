@@ -26,10 +26,11 @@ jobs:
           path: hass-wattbox
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Checkout PyWattBox library repository
+      - name: Checkout PyWattBox library repository (v0.9.0 tag)
         uses: actions/checkout@v4
         with:
           repository: eseglem/pywattbox
+          ref: v0.9.0
           path: pywattbox
 
       - name: Set up Python
@@ -261,4 +262,4 @@ Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
           else
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### ✅ All Good" >> $GITHUB_STEP_SUMMARY
-            echo "PyWattBox library is up to date on the beta branch!" >>
+            echo "PyWattBox library is up to date on the beta
