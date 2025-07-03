@@ -40,15 +40,17 @@ jobs:
           DEST="hass-wattbox/custom_components/wattbox/pywattbox_800"
           mkdir -p "$DEST"
           echo "Syncing files from $SRC to $DEST"
+          # Exclude .git and .git* files, but include docs and all normal files
+          EXCLUDES=(--exclude='.git/' --exclude='.gitignore' --exclude='.gitattributes' --exclude='.github/')
           # Dry run for preview
           echo "--- Dry run (preview changes) ---"
-          rsync -avun --delete "$SRC/" "$DEST/" | tee rsync_dryrun.txt
+          rsync -avun --delete "${EXCLUDES[@]}" "$SRC" "$DEST/" | tee rsync_dryrun.txt
           echo "--- Actual sync ---"
-          rsync -avu --delete "$SRC/" "$DEST/" | tee rsync_actual.txt
+          rsync -avu --delete "${EXCLUDES[@]}" "$SRC" "$DEST/" | tee rsync_actual.txt
           echo "Sync complete."
           # Save summary for later
           echo "--- Files copied/updated ---" > sync_summary.txt
-          grep -E '^>f|\*deleting' rsync_actual.txt | tee -a sync_summary.txt
+          grep -E '^>f|\*deleting' rsync_actual.txt | tee -a sync_summary.txt || true
           echo "--- End of sync summary ---" >> sync_summary.txt
       - name: Checkout current repository
         uses: actions/checkout@v4
