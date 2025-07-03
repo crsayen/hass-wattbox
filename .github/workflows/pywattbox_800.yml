@@ -19,6 +19,25 @@ jobs:
     runs-on: ubuntu-latest
     name: Check PyWattBox-800 Library Version
     steps:
+      - name: Sync pywattbox_800 files to custom_component if missing or outdated
+        shell: bash
+        run: |
+          set -e
+          mkdir -p hass-wattbox/custom_components/wattbox/pywattbox_800
+          for src in pywattbox_800/*.py; do
+            fname=$(basename "$src")
+            dest="hass-wattbox/custom_components/wattbox/pywattbox_800/$fname"
+            if [ ! -f "$dest" ]; then
+              echo "Copying missing $fname to custom_component..."
+              cp "$src" "$dest"
+            elif ! diff -q "$src" "$dest" > /dev/null; then
+              echo "Updating outdated $fname in custom_component..."
+              cp "$src" "$dest"
+            else
+              echo "$fname is up to date."
+            fi
+          done
+          echo "Sync complete."
       - name: Checkout current repository
         uses: actions/checkout@v4
         with:
@@ -42,10 +61,12 @@ jobs:
         shell: bash
         run: |
           set -e
+          set -x
           echo "Comparing library versions..."
           # Function to get version from __init__.py
           get_version() {
             local file="$1"
+            echo "Checking for file: $file"
             if [ -f "$file" ]; then
               grep -E '^__version__\s*=' "$file" | sed 's/.*=\s*["\x27]\([^"\x27]*\)["\x27].*/\1/' || echo "unknown"
             else
@@ -53,8 +74,18 @@ jobs:
             fi
           }
           # Get versions
-          CURRENT_VERSION=$(get_version "hass-wattbox/custom_components/wattbox/pywattbox_800/__init__.py")
-          LATEST_VERSION=$(get_version "pywattbox_800/__init__.py")
+          CURRENT_FILE="hass-wattbox/custom_components/wattbox/pywattbox_800/__init__.py"
+          LATEST_FILE="pywattbox_800/__init__.py"
+          CURRENT_VERSION=$(get_version "$CURRENT_FILE")
+          LATEST_VERSION=$(get_version "$LATEST_FILE")
+          if [ "$CURRENT_VERSION" = "missing" ]; then
+            echo "ERROR: $CURRENT_FILE not found!" >&2
+            exit 1
+          fi
+          if [ "$LATEST_VERSION" = "missing" ]; then
+            echo "ERROR: $LATEST_FILE not found!" >&2
+            exit 1
+          fi
           echo "Current version in hass-wattbox: $CURRENT_VERSION"
           echo "Latest version in pywattbox_800: $LATEST_VERSION"
           # Set outputs
