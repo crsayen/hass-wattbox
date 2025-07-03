@@ -36,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          SRC="pywattbox_800/pywattbox_800"
+          SRC="pywattbox_800/"
           DEST="hass-wattbox/custom_components/wattbox/pywattbox_800"
           mkdir -p "$DEST"
           echo "Syncing files from $SRC to $DEST"
