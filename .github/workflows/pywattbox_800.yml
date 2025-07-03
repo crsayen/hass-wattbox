@@ -19,25 +19,37 @@ jobs:
     runs-on: ubuntu-latest
     name: Check PyWattBox-800 Library Version
     steps:
+      # Checkout steps must come first so both source and destination exist
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+        with:
+          path: hass-wattbox
+          ref: ${{ github.ref_name }}
+      - name: Checkout PyWattBox-800 library repository
+        uses: actions/checkout@v4
+        with:
+          repository: bballdavis/pywattbox_800
+          path: pywattbox_800
+
+      # Recursive sync with debug and summary
       - name: Sync pywattbox_800 files to custom_component if missing or outdated
         shell: bash
         run: |
           set -e
-          mkdir -p hass-wattbox/custom_components/wattbox/pywattbox_800
-          for src in pywattbox_800/*.py; do
-            fname=$(basename "$src")
-            dest="hass-wattbox/custom_components/wattbox/pywattbox_800/$fname"
-            if [ ! -f "$dest" ]; then
-              echo "Copying missing $fname to custom_component..."
-              cp "$src" "$dest"
-            elif ! diff -q "$src" "$dest" > /dev/null; then
-              echo "Updating outdated $fname in custom_component..."
-              cp "$src" "$dest"
-            else
-              echo "$fname is up to date."
-            fi
-          done
+          SRC="pywattbox_800/pywattbox_800"
+          DEST="hass-wattbox/custom_components/wattbox/pywattbox_800"
+          mkdir -p "$DEST"
+          echo "Syncing files from $SRC to $DEST"
+          # Dry run for preview
+          echo "--- Dry run (preview changes) ---"
+          rsync -avun --delete "$SRC/" "$DEST/" | tee rsync_dryrun.txt
+          echo "--- Actual sync ---"
+          rsync -avu --delete "$SRC/" "$DEST/" | tee rsync_actual.txt
           echo "Sync complete."
+          # Save summary for later
+          echo "--- Files copied/updated ---" > sync_summary.txt
+          grep -E '^>f|\*deleting' rsync_actual.txt | tee -a sync_summary.txt
+          echo "--- End of sync summary ---" >> sync_summary.txt
       - name: Checkout current repository
         uses: actions/checkout@v4
         with:
@@ -267,27 +279,15 @@ jobs:
           echo "| Latest Version | \`${{ steps.compare.outputs.latest_version }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Versions Match | ${{ steps.compare.outputs.versions_match == 'true' && '✅ Yes' || '❌ No' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Files Match | ${{ steps.compare-files.outputs.changes_detected == 'false' && '✅ Yes' || '❌ No' }} |" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.compare.outputs.versions_match }}" == "false" ] || [ "${{ steps.compare-files.outputs.changes_detected }}" == "true" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ⚠️ Action Required" >> $GITHUB_STEP_SUMMARY
-            echo "The PyWattBox-800 library needs to be updated on all branches. Check the issues tab for details." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### Debug Output: Compare Library Versions" >> $GITHUB_STEP_SUMMARY
-            cat compare_versions_debug.txt >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### Debug Output: Compare File Contents" >> $GITHUB_STEP_SUMMARY
-            cat compare_files_debug.txt >> $GITHUB_STEP_SUMMARY
-          else
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ✅ All Good" >> $GITHUB_STEP_SUMMARY
-            echo "PyWattBox-800 library is up to date on all branches!" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### Debug Output: Compare Library Versions" >> $GITHUB_STEP_SUMMARY
-            cat compare_versions_debug.txt >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "#### Debug Output: Compare File Contents" >> $GITHUB_STEP_SUMMARY
-            cat compare_files_debug.txt >> $GITHUB_STEP_SUMMARY
-          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Sync Actions" >> $GITHUB_STEP_SUMMARY
+          cat sync_summary.txt >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Debug Output: Compare Library Versions" >> $GITHUB_STEP_SUMMARY
+          cat compare_versions_debug.txt >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Debug Output: Compare File Contents" >> $GITHUB_STEP_SUMMARY
+          cat compare_files_debug.txt >> $GITHUB_STEP_SUMMARY
       - name: Create issue if outdated
         if: steps.compare.outputs.versions_match == 'false' || steps.compare-files.outputs.changes_detected == 'true'
         uses: actions/github-script@v7
