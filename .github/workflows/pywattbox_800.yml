@@ -54,7 +54,7 @@ jobs:
           }
           # Get versions
           CURRENT_VERSION=$(get_version "hass-wattbox/custom_components/wattbox/pywattbox_800/__init__.py")
-          LATEST_VERSION=$(get_version "pywattbox_800/pywattbox_800/__init__.py")
+          LATEST_VERSION=$(get_version "pywattbox_800/__init__.py")
           echo "Current version in hass-wattbox: $CURRENT_VERSION"
           echo "Latest version in pywattbox_800: $LATEST_VERSION"
           # Set outputs
@@ -82,10 +82,10 @@ jobs:
           set -e
           echo "Comparing file contents..."
           # Get all Python files from the source directory
-          if [ -d "pywattbox_800/pywattbox_800" ]; then
-            mapfile -t FILES < <(find pywattbox_800/pywattbox_800 -name "*.py" -type f -printf "%f\n" | sort)
+          if [ -d "pywattbox_800/" ]; then
+            mapfile -t FILES < <(find pywattbox_800/ -name "*.py" -type f -printf "%f\n" | sort)
           else
-            echo "❌ Source directory pywattbox_800/pywattbox_800 not found" | tee compare_files_debug.txt
+            echo "❌ Source directory pywattbox_800/ not found" | tee compare_files_debug.txt
             exit 1
           fi
           CHANGES_DETECTED=false
@@ -93,7 +93,7 @@ jobs:
           DEBUG_LOG="--- Compare File Contents Debug ---\n"
           for file in "${FILES[@]}"; do
             CURRENT_FILE="hass-wattbox/custom_components/wattbox/pywattbox_800/$file"
-            LATEST_FILE="pywattbox_800/pywattbox_800/$file"
+            LATEST_FILE="pywattbox_800/$file"
             DEBUG_LOG+="Checking $file...\n"
             if [ ! -f "$CURRENT_FILE" ]; then
               DEBUG_LOG+="❌ $file is missing in current repository\n"
