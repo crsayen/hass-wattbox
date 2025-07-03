@@ -74,7 +74,12 @@ jobs:
           echo "--- Compare Library Versions Debug ---" > compare_versions_debug.txt
           echo "Current version: $CURRENT_VERSION" >> compare_versions_debug.txt
           echo "Latest version: $LATEST_VERSION" >> compare_versions_debug.txt
-          echo "Versions match: $(if [ \"$CURRENT_VERSION\" == \"$LATEST_VERSION\" ]; then echo 'true'; else echo 'false'; fi)" >> compare_versions_debug.txt
+          if [ "$CURRENT_VERSION" == "$LATEST_VERSION" ]; then
+            MATCH_RESULT="true"
+          else
+            MATCH_RESULT="false"
+          fi
+          echo "Versions match: $MATCH_RESULT" >> compare_versions_debug.txt
       - name: Compare file contents
         id: compare-files
         shell: bash
