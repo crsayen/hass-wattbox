@@ -108,20 +108,15 @@ class WattBoxClient:
     # Device Information Methods
     
     def get_device_info(self, refresh: bool = False) -> WattBoxDevice:
-        """
-        Get complete device information.
-        
-        Args:
-            refresh: Force refresh of cached data
-            include_outlet_power: Include individual outlet power data (may take longer)
-        """
+        logger.info('getting device info')
         if self._device_info and not refresh:
+            logger.info('getting cached info')
             return self._device_info
         
         logger.debug("Starting device info collection")
         
         info_response = self._get("/wattbox_info.xml")
-
+        logger.info(f'got a response: {info_response}')
         system_info = SystemInfo(
             "fwv",
             info_response.get('host_name'),
@@ -130,9 +125,12 @@ class WattBoxClient:
             12
         )
 
+        logger.info('created system info')
+
         o_names = info_response.get('outlet_name')
         o_status = [x == "1" for x in info_response.get('outlet_status')]
         o_method = info_response.get('outlet_method')
+        logger.info('extracted outlet info')
 
         outlets = [
             OutletInfo(
@@ -144,12 +142,16 @@ class WattBoxClient:
             for i, (name, status, method) in enumerate(tuple(zip(o_names, o_status, o_method)))
         ]
 
+        logger.info('created outlets')
+
         power_status = PowerStatus(
             self._parse_numeric_value(info_response.get('power_value')),
             self._parse_numeric_value(info_response.get('power_value')),
             self._parse_numeric_value(info_response.get('voltage_value')),
             True
         )
+
+        logger.info('created power status')
 
         self._device_info = WattBoxDevice(
             system_info=system_info,
@@ -159,6 +161,8 @@ class WattBoxClient:
             ups_connected=False,
             auto_reboot_enabled=info_response.get('auto_reboot') == "1"
         )
+
+        logger.info('finished creating device info')
         
         logger.debug("Device info collection complete")
         return self._device_info

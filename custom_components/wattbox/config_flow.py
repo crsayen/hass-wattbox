@@ -61,6 +61,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     try:
         # Get device information for validation and unique ID
+        _LOGGER.info('attempting to get info')
         system_info = await hass.async_add_executor_job(client.get_system_info)
         
         # Return info that you want to store in the config entry.
