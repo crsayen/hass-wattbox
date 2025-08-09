@@ -16,6 +16,7 @@ from .const import (
     DEFAULT_NAME, 
     DEFAULT_PASSWORD, 
     DEFAULT_PORT, 
+    DEFAULT_HOST, 
     DEFAULT_USER,
     CONF_ENABLE_POWER_SENSORS,
     DEFAULT_ENABLE_POWER_SENSORS,
@@ -165,12 +166,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="reconfigure",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_HOST, default=user_input.get(CONF_HOST, "")): cv.string,
-                    vol.Optional(CONF_PORT, default=user_input.get(CONF_PORT, DEFAULT_PORT)): cv.port,
-                    vol.Optional(CONF_USERNAME, default=user_input.get(CONF_USERNAME, DEFAULT_USER)): cv.string,
-                    vol.Optional(CONF_PASSWORD, default=user_input.get(CONF_PASSWORD, DEFAULT_PASSWORD)): cv.string,
-                    vol.Optional(CONF_NAME, default=user_input.get(CONF_NAME, DEFAULT_NAME)): cv.string,
-                    vol.Optional(CONF_ENABLE_POWER_SENSORS, default=user_input.get(CONF_ENABLE_POWER_SENSORS, DEFAULT_ENABLE_POWER_SENSORS)): cv.boolean,
+                    vol.Required(CONF_HOST, default=DEFAULT_HOST): cv.string,
+                    vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port,
+                    vol.Optional(CONF_USERNAME, default=DEFAULT_USER): cv.string,
+                    vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
+                    vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+                    vol.Optional(CONF_ENABLE_POWER_SENSORS, default=DEFAULT_ENABLE_POWER_SENSORS): cv.boolean,
                 }
             ),
             errors=errors,
