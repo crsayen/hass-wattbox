@@ -50,7 +50,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
-    _LOGGER.info('validate_input')
+    _LOGGER.debug('validate_input')
     # Create client with provided credentials
     client = WattBoxClient(
         host=data[CONF_HOST],
@@ -59,11 +59,11 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         password=data[CONF_PASSWORD],
         timeout=10.0,
     )
-    _LOGGER.info('created client')
+    _LOGGER.debug('created client')
 
     try:
         # Get device information for validation and unique ID
-        _LOGGER.info('attempting to get info')
+        _LOGGER.debug('attempting to get info')
         system_info = await hass.async_add_executor_job(client.get_system_info)
         
         # Return info that you want to store in the config entry.
@@ -99,7 +99,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step."""
-        _LOGGER.info(f'async_step_user:user_input: {user_input}')
+        _LOGGER.debug(f'async_step_user:user_input: {user_input}')
         errors: dict[str, str] = {}
         
         if user_input is not None:
