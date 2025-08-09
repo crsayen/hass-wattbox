@@ -26,11 +26,6 @@ async def async_setup_entry(
     
     # System binary sensors (on main WattBox device)
     entities.append(WattBoxAutoRebootSensor(coordinator))
-    entities.append(WattBoxUPSConnectedSensor(coordinator))
-    
-    # UPS on battery status (if UPS is connected, on main WattBox device)
-    if coordinator.data and coordinator.data.get("ups_connected"):
-        entities.append(WattBoxUPSOnBatterySensor(coordinator))
     
     # Individual outlet status sensors (on individual outlet devices)
     if coordinator.data and coordinator.data.get("outlets"):
@@ -71,36 +66,6 @@ class WattBoxAutoRebootSensor(WattBoxBaseBinarySensor):
         if not self.coordinator.data:
             return None
         return self.coordinator.data.get("auto_reboot_enabled", False)
-
-
-class WattBoxUPSConnectedSensor(WattBoxBaseBinarySensor):
-    """UPS connected status sensor."""
-
-    def __init__(self, coordinator):
-        super().__init__(coordinator, "ups_connected", "UPS Connected", BinarySensorDeviceClass.CONNECTIVITY)
-
-    @property
-    def is_on(self) -> Optional[bool]:
-        """Return true if UPS is connected."""
-        if not self.coordinator.data:
-            return None
-        return self.coordinator.data.get("ups_connected", False)
-
-
-class WattBoxUPSOnBatterySensor(WattBoxBaseBinarySensor):
-    """UPS on battery status sensor."""
-
-    def __init__(self, coordinator):
-        super().__init__(coordinator, "ups_on_battery", "UPS On Battery", BinarySensorDeviceClass.BATTERY)
-
-    @property
-    def is_on(self) -> Optional[bool]:
-        """Return true if UPS is on battery."""
-        if not self.coordinator.data or not self.coordinator.data.get("ups_status"):
-            return None
-        ups_status = self.coordinator.data["ups_status"]
-        return getattr(ups_status, "on_battery", False)
-
 
 class WattBoxOutletStatusSensor(CoordinatorEntity, BinarySensorEntity):
     """Outlet status binary sensor."""

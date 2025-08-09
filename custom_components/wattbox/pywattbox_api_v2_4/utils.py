@@ -4,6 +4,10 @@ WattBox API Utilities
 Helper functions and utilities for WattBox API operations.
 """
 
+from __future__ import annotations
+
+import xml.etree.ElementTree as ET
+from typing import Any, Dict, Optional, Union
 import re
 import socket
 import time
@@ -183,34 +187,17 @@ def calculate_timeout(command_type: str, default_timeout: float = 10.0) -> float
     
     return timeout_map.get(command_type, timeout_map["default"])
 
+def xml_to_dict(xml_text: str) -> Dict[str, Any]:
+    root = ET.fromstring(xml_text)
+    result: Dict[str, Any] = {}
 
-def discover_wattbox_devices(subnet: str = "192.168.1", port: int = 23, timeout: float = 2.0) -> List[str]:
-    """
-    Discover WattBox devices on the network by attempting connections.
-    
-    Args:
-        subnet: Network subnet to scan (e.g., "192.168.1")
-        port: Port to scan (default 23 for Telnet)
-        timeout: Connection timeout in seconds
-    
-    Returns:
-        List of IP addresses where WattBox devices were found
-    """
-    devices = []
-    
-    for i in range(1, 255):
-        ip = f"{subnet}.{i}"
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        
-        try:
-            result = sock.connect_ex((ip, port))
-            if result == 0:
-                # Connection successful, might be a WattBox
-                devices.append(ip)
-        except Exception:
-            pass
-        finally:
-            sock.close()
-    
-    return devices
+    def parse_value(txt: Optional[str]) -> Union[str, list, None]:
+        if txt is None:
+            return None
+        if "," in txt:
+            return [piece.strip().strip('"') for piece in txt.split(",")]
+        return txt.strip().strip('"')
+
+    for child in root:
+        result[child.tag] = parse_value(child.text)
+    return result

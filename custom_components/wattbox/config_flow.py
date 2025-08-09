@@ -59,14 +59,8 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     )
 
     try:
-        # Test connection and get device info
-        await hass.async_add_executor_job(client.connect)
-        
         # Get device information for validation and unique ID
         system_info = await hass.async_add_executor_job(client.get_system_info)
-        
-        # Disconnect after testing
-        await hass.async_add_executor_job(client.disconnect)
         
         # Return info that you want to store in the config entry.
         return {
@@ -90,12 +84,6 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     except Exception as err:
         _LOGGER.error("Unexpected error: %s", err)
         raise CannotConnect from err
-    finally:
-        # Ensure client is disconnected
-        try:
-            await hass.async_add_executor_job(client.disconnect)
-        except Exception:
-            pass
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
