@@ -116,7 +116,7 @@ class WattBoxClient:
         
         logger.debug("Starting device info collection")
         
-        info_response = xml_to_dict(self._get("/wattbox_info.xml"))
+        info_response = xml_to_dict(self._get("/wattbox_info.xml").text)
         logger.info(f'got a response: {info_response}')
         system_info = SystemInfo(
             "fwv",
