@@ -99,13 +99,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step."""
-        logging.info(f'async_step_user:user_input: {user_input}')
+        _LOGGER.info(f'async_step_user:user_input: {user_input}')
         errors: dict[str, str] = {}
         
         if user_input is not None:
             try:
                 info = await validate_input(self.hass, user_input)
-                logging.info('validated input')
+                _LOGGER.error('validated input')
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:

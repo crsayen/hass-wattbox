@@ -25,6 +25,7 @@ from .models import (
 from .utils import (
     validate_ip_address,
     validate_port,
+    xml_to_dict
 )
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ class WattBoxClient:
         if command not in {0, 1, 3, 4, 5}:
             raise ValueError("Invalid command. Use 0(off),1(on),3(reset),4(auto reboot on),5(auto reboot off).")
         r = self._get("/control.cgi", params={"outlet": outlet, "command": command})
-        return self._xml_to_dict(r.text)
+        return xml_to_dict(r.text)
 
     def _parse_numeric_value(self, value: str, factor = 0.1):
         i = int(value)
@@ -115,7 +116,7 @@ class WattBoxClient:
         
         logger.debug("Starting device info collection")
         
-        info_response = self._get("/wattbox_info.xml")
+        info_response = xml_to_dict(self._get("/wattbox_info.xml"))
         logger.info(f'got a response: {info_response}')
         system_info = SystemInfo(
             "fwv",
