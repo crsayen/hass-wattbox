@@ -162,6 +162,9 @@ class WattBoxClient:
         
         logger.debug("Device info collection complete")
         return self._device_info
+    
+    def get_system_info(self):
+        return self.get_device_info(refresh=True).system_info
 
     # Outlet Management Methods
     
@@ -175,7 +178,7 @@ class WattBoxClient:
         return list([o.name for o in self.get_device_info(refresh=True).outlets])
     
     def get_all_outlets_info(self, include_power_data: bool = False) -> List[OutletInfo]:
-        return self.get_device_info().outlets
+        return self.get_device_info(True).outlets
     
     def set_outlet(self, outlet: int, action: Union[str, OutletAction], delay: Optional[int] = None) -> bool:
         if action == OutletAction.RESET:
@@ -184,7 +187,7 @@ class WattBoxClient:
         
         state = action == OutletAction.ON
         if action == OutletAction.TOGGLE:
-            state = not self.get_device_info().outlets[outlet].status
+            state = not self.get_device_info(True).outlets[outlet].status
 
         self._control_raw(outlet, int(state))
         return True
@@ -212,12 +215,12 @@ class WattBoxClient:
     # Power Status Methods
     
     def get_power_status(self) -> Optional[PowerStatus]:
-        return self.get_device_info().power_status
+        return self.get_device_info(True).power_status
     
     # Auto Reboot Methods
     
     def get_auto_reboot_status(self) -> bool:
-        self.get_device_info().auto_reboot_enabled
+        self.get_device_info(True).auto_reboot_enabled
     
     def set_auto_reboot(self, enabled: bool) -> bool:
         self._control_raw(0, 5 - int(enabled))
