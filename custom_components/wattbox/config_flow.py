@@ -50,6 +50,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     Data has the keys from STEP_USER_DATA_SCHEMA with values provided by the user.
     """
+    _LOGGER.info('validate_input')
     # Create client with provided credentials
     client = WattBoxClient(
         host=data[CONF_HOST],
@@ -58,6 +59,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         password=data[CONF_PASSWORD],
         timeout=10.0,
     )
+    _LOGGER.info('created client')
 
     try:
         # Get device information for validation and unique ID
@@ -97,11 +99,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle the initial step."""
+        logging.info(f'async_step_user:user_input: {user_input}')
         errors: dict[str, str] = {}
         
         if user_input is not None:
             try:
                 info = await validate_input(self.hass, user_input)
+                logging.info('validated input')
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
